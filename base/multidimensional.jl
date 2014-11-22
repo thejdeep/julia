@@ -236,7 +236,7 @@ _getindex(A, I::(Union(Int,AbstractVector)...)) =
 
 # The stagedfunction here is just to work around the performance hit
 # of splatting
-stagedfunction getindex(A::Array, I::Union(Real,AbstractVector)...)
+stagedfunction getindex(A::Array, I::Union(Real,AbstractVector,Colon)...)
     N = length(I)
     Isplat = Expr[:(I[$d]) for d = 1:N]
     quote
@@ -246,7 +246,7 @@ stagedfunction getindex(A::Array, I::Union(Real,AbstractVector)...)
 end
 
 # Also a safe version of getindex!
-stagedfunction getindex!(dest, src, I::Union(Real,AbstractVector)...)
+stagedfunction getindex!(dest, src, I::Union(Real,AbstractVector,Colon)...)
     N = length(I)
     Isplat = Expr[:(I[$d]) for d = 1:N]
     Jsplat = Expr[:(to_index(I[$d])) for d = 1:N]
@@ -257,7 +257,7 @@ stagedfunction getindex!(dest, src, I::Union(Real,AbstractVector)...)
 end
 
 
-stagedfunction setindex!(A::Array, x, J::Union(Real,AbstractArray)...)
+stagedfunction setindex!(A::Array, x, J::Union(Real,AbstractArray,Colon)...)
     N = length(J)
     if x<:AbstractArray
         ex=quote
