@@ -1222,8 +1222,8 @@ size_t jl_static_show_x(JL_STREAM *out, jl_value_t *v, int depth)
     else if (jl_typeof(v) == NULL) {
         n += JL_PRINTF(out, "<?::#null>");
     }
-    else if ((uptrint_t)v->type < 4096U) {
-        n += JL_PRINTF(out, "<?::#%d>", (int)(uptrint_t)v->type);
+    else if ((uptrint_t)jl_typetagof(v)->type < 4096U) {
+        n += JL_PRINTF(out, "<?::#%d>", (int)(uptrint_t)jl_typetagof(v)->type);
     }
     else if (jl_is_lambda_info(v)) {
         jl_lambda_info_t *li = (jl_lambda_info_t*)v;

@@ -264,9 +264,9 @@ static Value *emit_unbox(Type *to, Value *x, jl_value_t *jt)
             Type *ety = jl_llvmtuple_eltype(to,jt,i);
             if (ety == T_void)
                 continue;
-            Value *ref = emit_tupleref(x,ConstantInt::get(T_size,i+1),jt,NULL);
+            Value *ref = emit_tupleref(x,ConstantInt::get(T_size,i),jt,NULL);
             Value *elt = emit_unbox(ety,ref,jl_tupleref(jt,i));
-            tpl = emit_tupleset(tpl,ConstantInt::get(T_size,i+1),elt,jt,NULL);
+            tpl = emit_tupleset(tpl,ConstantInt::get(T_size,i),elt,jt,NULL);
         }
         return tpl;
     }
@@ -630,11 +630,11 @@ static Value *emit_pointerref(jl_value_t *e, jl_value_t *i, jl_codectx_t *ctx)
                                ConstantInt::get(T_size,
                                     sizeof(void*)+size));
         builder.CreateStore(literal_pointer_val((jl_value_t*)ety),
-                            emit_nthptr_addr(strct, (size_t)0));
+                            emit_typeptr_addr(strct));
         im1 = builder.CreateMul(im1, ConstantInt::get(T_size,
                     LLT_ALIGN(size, ((jl_datatype_t*)ety)->alignment)));
         thePtr = builder.CreateGEP(builder.CreateBitCast(thePtr, T_pint8), im1);
-        builder.CreateMemCpy(builder.CreateBitCast(emit_nthptr_addr(strct, (size_t)1), T_pint8),
+        builder.CreateMemCpy(builder.CreateBitCast(strct, T_pint8),
                             thePtr, size, 1);
         return mark_julia_type(strct, ety);
     }
@@ -690,7 +690,7 @@ static Value *emit_pointerset(jl_value_t *e, jl_value_t *x, jl_value_t *i, jl_co
         im1 = builder.CreateMul(im1, ConstantInt::get(T_size,
                     LLT_ALIGN(size, ((jl_datatype_t*)ety)->alignment)));
         builder.CreateMemCpy(builder.CreateGEP(builder.CreateBitCast(thePtr, T_pint8), im1),
-                             builder.CreateBitCast(emit_nthptr_addr(val, (size_t)1), T_pint8), size, 1);
+                             builder.CreateBitCast(val, T_pint8), size, 1);
     }
     else {
         if (val == NULL) {
