@@ -199,7 +199,7 @@ end
 
 # serialization
 
-function serialize(s, n::BigFloat)
+function serialize(s::Serializer, n::BigFloat)
     Base.serialize_type(s, BigFloat)
     serialize(s, string(n))
 end

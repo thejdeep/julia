@@ -212,7 +212,7 @@ promote_rule{T<:Integer}(::Type{BigInt}, ::Type{T}) = BigInt
 
 # serialization
 
-function serialize(s, n::BigInt)
+function serialize(s::Serializer, n::BigInt)
     Base.serialize_type(s, BigInt)
     serialize(s, base(62,n))
 end

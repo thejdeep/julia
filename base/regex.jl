@@ -253,7 +253,7 @@ filter(r::Regex,  d::Dict) = filter!(r,copy(d))
 
 
 # Don't serialize the pointers
-function serialize(s, r::Regex)
+function serialize(s::Serializer, r::Regex)
     serialize_type(s, typeof(r))
     serialize(s, r.pattern)
     serialize(s, r.options)

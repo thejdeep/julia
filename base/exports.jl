@@ -93,6 +93,7 @@ export
     RoundNearestTiesUp,
     RoundToZero,
     RoundUp,
+    Serializer,
     Set,
     SharedArray,
     SharedMatrix,
