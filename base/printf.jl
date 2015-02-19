@@ -11,7 +11,7 @@ function gen(s::AbstractString)
     blk = Expr(:block, :(local neg, pt, len, exp, do_out, args))
     for x in parse(s)
         if isa(x,AbstractString)
-            push!(blk.args, :(write(out, $(length(x)==1 ? x[1] : x))))
+            push!(blk.args, :(write(out, $(length(x)==1 ? x[start(x)] : x))))
         else
             c = lowercase(x[end])
             f = c=='f' ? gen_f :
@@ -34,13 +34,13 @@ end
 ### printf format string parsing ###
 
 function parse(s::AbstractString)
-    # parse format string in to stings and format tuples
+    # parse format string in to strings and format tuples
     list = []
     i = j = start(s)
     while !done(s,j)
         c, k = next(s,j)
         if c == '%'
-            isempty(s[i:j-1]) || push!(list, s[i:j-1])
+            isempty(s[i:StringIndex(j.i-1)]) || push!(list, s[i:StringIndex(j.i-1)])
             flags, width, precision, conversion, k = parse1(s,k)
             '\'' in flags && error("printf format flag ' not yet supported")
             conversion == 'n'    && error("printf feature %n not supported")
@@ -52,19 +52,20 @@ function parse(s::AbstractString)
     end
     isempty(s[i:end]) || push!(list, s[i:end])
     # coalesce adjacent strings
-    i = 1
-    while i < length(list)
-        if isa(list[i],AbstractString)
-            for j = i+1:length(list)
-                if !isa(list[j],AbstractString)
-                    j -= 1
+    l = 1
+    while l < length(list)
+        if isa(list[l],AbstractString)
+            local m
+            for m = l+1:length(list)
+                if !isa(list[m],AbstractString)
+                    m -= 1
                     break
                 end
-                list[i] *= list[j]
+                list[l] *= list[m]
             end
-            deleteat!(list,i+1:j)
+            deleteat!(list,l+1:m)
         end
-        i += 1
+        l += 1
     end
     return list
 end
@@ -83,7 +84,7 @@ end
 next_or_die(s::AbstractString, k) = !done(s,k) ? next(s,k) :
     throw(ArgumentError("invalid printf format string: $(repr(s))"))
 
-function parse1(s::AbstractString, k::Integer)
+function parse1(s::AbstractString, k::StringIndex)
     j = k
     width = 0
     precision = -1
@@ -96,7 +97,7 @@ function parse1(s::AbstractString, k::Integer)
     while c in "#0- + '"
         c, k = next_or_die(s,k)
     end
-    flags = ascii(s[j:k-2])
+    flags = ascii(s[j:StringIndex(k.i-2)])
     # parse width
     while '0' <= c <= '9'
         width = 10*width + c-'0'

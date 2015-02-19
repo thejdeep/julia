@@ -14,7 +14,7 @@ function decor_help_desc(func::AbstractString, mfunc::AbstractString, desc::Abst
     sd = convert(Array{ByteString,1}, split(desc, '\n'))
     for i = 1:length(sd)
         if startswith(sd[i], func)
-            sd[i] = mfunc * sd[i][length(func)+1:end]
+            sd[i] = mfunc * sd[i][(length(func) + 1)*codeunit:end]
         else
             break
         end

@@ -5,7 +5,7 @@ function find_in_path(name::AbstractString)
     isfile(name) && return abspath(name)
     base = name
     if endswith(name,".jl")
-        base = name[1:end-3]
+        base = name[1:end-3codeunit]
     else
         name = string(base,".jl")
         isfile(name) && return abspath(name)

@@ -4,7 +4,9 @@
 #     http://thomasinterestingblog.wordpress.com/2011/11/30/generating-primes-with-the-sieve-of-atkin-in-c/
 #     http://dl.dropboxusercontent.com/u/29023244/atkin.cpp
 #
-function primesmask(s::AbstractVector{Bool})
+function primesmask(t::AbstractVector{Bool})
+    # FIXME: work around bug waiting for more debugging at the REPL
+    s = convert(Vector{Bool}, t)
     n = length(s)
     n < 2 && return s; s[2] = true
     n < 3 && return s; s[3] = true

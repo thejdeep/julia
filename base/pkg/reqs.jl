@@ -17,8 +17,8 @@ immutable Requirement <: Line
     function Requirement(content::AbstractString)
         fields = split(replace(content, r"#.*$", ""))
         system = AbstractString[]
-        while !isempty(fields) && fields[1][1] == '@'
-            push!(system,shift!(fields)[2:end])
+        while !isempty(fields) && startswith(fields[1], '@')
+            push!(system, shift!(fields)[2codeunit:end])
         end
         isempty(fields) && error("invalid requires entry: $content")
         package = shift!(fields)

@@ -122,7 +122,7 @@ free(regex::Ptr{Void}) =
 
 function exec(regex::Ptr{Void}, extra::Ptr{Void}, str::SubString, offset::Integer,
               options::Integer, ovec::Vector{Int32})
-    return exec(regex, extra, str.string, str.offset, offset, sizeof(str),
+    return exec(regex, extra, str.string, str.offset.i, offset, sizeof(str),
                 options, ovec)
 end
 

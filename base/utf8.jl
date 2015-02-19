@@ -31,14 +31,56 @@ is_utf8_start(byte::UInt8) = ((byte&0xc0)!=0x80)
 function endof(s::UTF8String)
     d = s.data
     i = length(d)
-    i == 0 && return i
+    i == 0 && return StringIndex(i)
     while !is_utf8_start(d[i])
         i -= 1
     end
-    i
+    StringIndex(i)
 end
 length(s::UTF8String) = int(ccall(:u8_strlen, Csize_t, (Ptr{UInt8},), s.data))
 
+function next(s::UTF8String, i::StringIndex)
+    # potentially faster version
+    # d = s.data
+    # a::UInt32 = d[i]
+    # if a < 0x80; return char(a); end
+    # #if a&0xc0==0x80; return '\ufffd'; end
+    # b::UInt32 = a<<6 + d[i+1]
+    # if a < 0xe0; return char(b - 0x00003080); end
+    # c::UInt32 = b<<6 + d[i+2]
+    # if a < 0xf0; return char(c - 0x000e2080); end
+    # return char(c<<6 + d[i+3] - 0x03c82080)
+
+    j = i.i
+    d = s.data
+    b = d[j]
+    if !is_utf8_start(b)
+        k = j-1
+        while 0 < k && !is_utf8_start(d[k])
+            k -= 1
+        end
+        if 0 < k && j <= k+utf8_trailing[d[k]+1] <= length(d)
+            # b is a continuation byte of a valid UTF-8 character
+            throw(ArgumentError("invalid UTF-8 character index"))
+        end
+        # move past 1 byte in case the data is actually Latin-1
+        return '\ufffd', StringIndex(j+1)
+    end
+    trailing = utf8_trailing[b+1]
+    if length(d) < j + trailing
+        return '\ufffd', StringIndex(j+1)
+    end
+    c::UInt32 = 0
+    for k = 1:trailing+1
+        c <<= 6
+        c += d[j]
+        j += 1
+    end
+    c -= utf8_offset[trailing+1]
+    char(c), StringIndex(j)
+end
+
+# TODO: deprecate
 function next(s::UTF8String, i::Int)
     # potentially faster version
     # d = s.data
@@ -87,6 +129,16 @@ function first_utf8_byte(ch::Char)
                   uint8((c>>18) | 0xf0)
 end
 
+function reverseind(s::UTF8String, i::StringIndex)
+    j = lastidx(s).i + 1 - i.i
+    d = s.data
+    while !is_utf8_start(d[j])
+        j -= 1
+    end
+    return StringIndex(j)
+end
+
+# TODO: deprecate
 function reverseind(s::UTF8String, i::Integer)
     j = lastidx(s) + 1 - i
     d = s.data
@@ -100,13 +152,54 @@ end
 
 sizeof(s::UTF8String) = sizeof(s.data)
 
-lastidx(s::UTF8String) = length(s.data)
+# FIXME: should probably return an Int instead of a StringIndex,
+# as this is used for internally indexing an array of bytes
+lastidx(s::UTF8String) = StringIndex(length(s.data))
 
+isvalid(s::UTF8String, i::StringIndex) =
+    (start(s) <= i <= endof(s)) && is_utf8_start(s.data[i.i])
+
+# TODO: deprecate
 isvalid(s::UTF8String, i::Integer) =
     (1 <= i <= endof(s.data)) && is_utf8_start(s.data[i])
 
 const empty_utf8 = UTF8String(UInt8[])
 
+function getindex(s::UTF8String, r::StringRange)
+    isempty(r) && return empty_utf8
+    i, j = first(r), last(r)
+    d = s.data
+    if !is_utf8_start(d[i.i])
+        i = nextind(s,i)
+    end
+    # FIXME: is this correct?
+    if j.i > length(d)
+        throw(BoundsError())
+    end
+    jj = nextind(s,j).i - 1
+    UTF8String(d[i.i:jj])
+end
+
+function search(s::UTF8String, c::Char, i::StringIndex)
+    c < char(0x80) && return StringIndex(search(s.data, uint8(c), i.i))
+    while true
+        i = StringIndex(search(s.data, first_utf8_byte(c), i.i))
+        (i == StringIndex(0) || s[i] == c) && return i
+        i = next(s,i)[2]
+    end
+end
+
+function rsearch(s::UTF8String, c::Char, i::StringIndex)
+    c < char(0x80) && return StringIndex(rsearch(s.data, uint8(c), i.i))
+    b = first_utf8_byte(c)
+    while true
+        i = StringIndex(rsearch(s.data, b, i.i))
+        (i == StringIndex(0) || s[i] == c) && return i
+        i = prevind(s,i)
+    end
+end
+
+# TODO: deprecate
 function getindex(s::UTF8String, r::UnitRange{Int})
     isempty(r) && return empty_utf8
     i, j = first(r), last(r)
@@ -125,7 +218,7 @@ function search(s::UTF8String, c::Char, i::Integer)
     c < char(0x80) && return search(s.data, uint8(c), i)
     while true
         i = search(s.data, first_utf8_byte(c), i)
-        (i==0 || s[i] == c) && return i
+        (i == StringIndex(0) || s[i] == c) && return i
         i = next(s,i)[2]
     end
 end
@@ -135,7 +228,7 @@ function rsearch(s::UTF8String, c::Char, i::Integer)
     b = first_utf8_byte(c)
     while true
         i = rsearch(s.data, b, i)
-        (i==0 || s[i] == c) && return i
+        (i == StringIndex(0) || s[i] == c) && return i
         i = prevind(s,i)
     end
 end
@@ -144,6 +237,7 @@ function string(a::ByteString...)
     if length(a) == 1
         return a[1]::UTF8String
     end
+    # FIXME: why not preallocate the array as for ASCIIString?
     # ^^ at least one must be UTF-8 or the ASCII-only method would get called
     data = Array(UInt8,0)
     for d in a

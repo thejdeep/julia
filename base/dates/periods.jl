@@ -41,7 +41,7 @@ for op in (:+,:-,:lcm,:gcd)
     @eval ($op){P<:Period}(x::P,y::P) = P(($op)(value(x),value(y)))
 end
 for op in (:.+, :.-)
-    op_ = symbol(string(op)[2:end])
+    op_ = symbol(string(op)[2codeunit:end])
     @eval begin
         ($op){P<:Period}(x::P,Y::StridedArray{P}) = ($op)(Y,x)
         ($op_){P<:Period}(x::P,Y::StridedArray{P}) = ($op)(Y,x)
@@ -65,7 +65,7 @@ for (op,Ty,Tz) in ((:.+,:P,:P),(:.-,:P,:P), (:.*,Real,:P),
                    (:div,:P,Int64), (:div,Integer,:P),
                    (:mod,:P,Int64), (:mod,Integer,:P))
     sop = string(op)
-    op_ = sop[1] == '.' ? symbol(sop[2:end]) : op
+    op_ = sop[1] == '.' ? symbol(sop[2codeunit:end]) : op
     @eval begin
         function ($op){P<:Period}(X::StridedArray{P},y::$Ty)
             Z = similar(X, $Tz)
@@ -186,7 +186,7 @@ function Base.string(x::CompoundPeriod)
         for p in x.periods
             s *= ", " * string(p)
         end
-        return s[3:end]
+        return s[3codeunit:end]
     end
 end
 Base.show(io::IO,x::CompoundPeriod) = print(io,string(x))

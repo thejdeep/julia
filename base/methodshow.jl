@@ -6,8 +6,8 @@ function argtype_decl(n, t) # -> (argname, argtype)
     end
     s = string(n)
     i = search(s,'#')
-    if i > 0
-        s = s[1:i-1]
+    if i >= start(s)
+        s = s[start(s):prevind(s, i)]
     end
     if t === Any && !isempty(s)
         return s, ""

@@ -256,56 +256,80 @@ u8str = "∀ ε > 0, ∃ δ > 0: |x-y| < δ ⇒ |f(x)-f(y)| < ε"
 
 # ascii search
 for str in [astr, Base.GenericString(astr)]
-    @test search(str, 'x') == 0
-    @test search(str, '\0') == 0
-    @test search(str, '\u80') == 0
-    @test search(str, '∀') == 0
-    @test search(str, 'H') == 1
-    @test search(str, 'l') == 3
+    @test search(str, 'x') == StringIndex(0)
+    @test search(str, '\0') == StringIndex(0)
+    @test search(str, '\u80') == StringIndex(0)
+    @test search(str, '∀') == StringIndex(0)
+    @test search(str, 'H') == StringIndex(1)
+    @test search(str, 'l') == StringIndex(3)
+    @test search(str, 'l', StringIndex(4)) == StringIndex(4)
+    @test search(str, 'l', StringIndex(5)) == StringIndex(11)
+    @test search(str, 'l', StringIndex(12)) == StringIndex(0)
+    @test search(str, ',') == StringIndex(6)
+    @test search(str, ',', StringIndex(7)) == StringIndex(0)
+    @test search(str, '\n') == StringIndex(14)
+    @test search(str, '\n', StringIndex(15)) == StringIndex(0)
+
+    # Deprecated
     @test search(str, 'l', 4) == 4
     @test search(str, 'l', 5) == 11
     @test search(str, 'l', 12) == 0
-    @test search(str, ',') == 6
     @test search(str, ',', 7) == 0
-    @test search(str, '\n') == 14
     @test search(str, '\n', 15) == 0
 end
 
 # ascii rsearch
 for str in [astr]
-    @test rsearch(str, 'x') == 0
-    @test rsearch(str, '\0') == 0
-    @test rsearch(str, '\u80') == 0
-    @test rsearch(str, '∀') == 0
-    @test rsearch(str, 'H') == 1
-    @test rsearch(str, 'H', 0) == 0
-    @test rsearch(str, 'l') == 11
+    @test rsearch(str, 'x') == StringIndex(0)
+    @test rsearch(str, '\0') == StringIndex(0)
+    @test rsearch(str, '\u80') == StringIndex(0)
+    @test rsearch(str, '∀') == StringIndex(0)
+    @test rsearch(str, 'H') == StringIndex(1)
+    @test rsearch(str, 'H', StringIndex(0)) == StringIndex(0)
+    @test rsearch(str, 'l') == StringIndex(11)
+    @test rsearch(str, 'l', StringIndex(5)) == StringIndex(4)
+    @test rsearch(str, 'l', StringIndex(4)) == StringIndex(4)
+    @test rsearch(str, 'l', StringIndex(3)) == StringIndex(3)
+    @test rsearch(str, 'l', StringIndex(2)) == StringIndex(0)
+    @test rsearch(str, ',') == StringIndex(6)
+    @test rsearch(str, ',', StringIndex(5)) == StringIndex(0)
+    @test rsearch(str, '\n') == StringIndex(14)
+
+    # Deprecated
     @test rsearch(str, 'l', 5) == 4
     @test rsearch(str, 'l', 4) == 4
     @test rsearch(str, 'l', 3) == 3
     @test rsearch(str, 'l', 2) == 0
-    @test rsearch(str, ',') == 6
     @test rsearch(str, ',', 5) == 0
-    @test rsearch(str, '\n') == 14
 end
 
 # utf-8 search
 for str in (u8str, Base.GenericString(u8str))
-    @test search(str, 'z') == 0
-    @test search(str, '\0') == 0
-    @test search(str, '\u80') == 0
-    @test search(str, '∄') == 0
-    @test search(str, '∀') == 1
+    @test search(str, 'z') == StringIndex(0)
+    @test search(str, '\0') == StringIndex(0)
+    @test search(str, '\u80') == StringIndex(0)
+    @test search(str, '∄') == StringIndex(0)
+    @test search(str, '∀') == StringIndex(1)
+    @test search(str, '∀', StringIndex(2)) == StringIndex(0)
+    @test search(str, '∃') == StringIndex(13)
+    @test search(str, '∃', StringIndex(14)) == StringIndex(0)
+    @test search(str, 'x') == StringIndex(26)
+    @test search(str, 'x', StringIndex(27)) == StringIndex(43)
+    @test search(str, 'x', StringIndex(44)) == StringIndex(0)
+    @test search(str, 'δ') == StringIndex(17)
+    @test search(str, 'δ', StringIndex(18)) == StringIndex(33)
+    @test search(str, 'δ', StringIndex(34)) == StringIndex(0)
+    @test search(str, 'ε') == StringIndex(5)
+    @test search(str, 'ε', StringIndex(6)) == StringIndex(54)
+    @test search(str, 'ε', StringIndex(55)) == StringIndex(0)
+
+    # Deprecated
     @test search(str, '∀', 2) == 0
-    @test search(str, '∃') == 13
     @test search(str, '∃', 14) == 0
-    @test search(str, 'x') == 26
     @test search(str, 'x', 27) == 43
     @test search(str, 'x', 44) == 0
-    @test search(str, 'δ') == 17
     @test search(str, 'δ', 18) == 33
     @test search(str, 'δ', 34) == 0
-    @test search(str, 'ε') == 5
     @test search(str, 'ε', 6) == 54
     @test search(str, 'ε', 55) == 0
 end

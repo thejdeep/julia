@@ -16,9 +16,25 @@ utf16_get_supplementary(lead::UInt16, trail::UInt16) = char(uint32(lead-0xd7f7)<
 function endof(s::UTF16String)
     d = s.data
     i = length(d) - 1
-    i == 0 && return i
-    utf16_is_surrogate(d[i]) ? i-1 : i
+    i == 0 && return StringIndex(i)
+    utf16_is_surrogate(d[i]) ? StringIndex(i-1) : StringIndex(i)
 end
+
+function next(s::UTF16String, i::StringIndex)
+    if !utf16_is_surrogate(s.data[i.i])
+        return char(s.data[i.i]), StringIndex(i.i+1)
+    elseif length(s.data)-1 > i && utf16_is_lead(s.data[i.i]) && utf16_is_trail(s.data[i.i+1])
+        return utf16_get_supplementary(s.data[i.i], s.data[i.i+1]), StringIndex(i.i+2)
+    end
+    throw(ArgumentError("invalid UTF-16 character index"))
+end
+
+function reverseind(s::UTF16String, i::StringIndex)
+    j = length(s.data) - i.i
+    return Base.utf16_is_trail(s.data[j]) ? StringIndex(j-1) : StringIndex(j)
+end
+
+# TODO: deprecate
 function next(s::UTF16String, i::Int)
     if !utf16_is_surrogate(s.data[i])
         return char(s.data[i]), i+1
@@ -32,6 +48,7 @@ function reverseind(s::UTF16String, i::Integer)
     j = length(s.data) - i
     return Base.utf16_is_trail(s.data[j]) ? j-1 : j
 end
+
 lastidx(s::UTF16String) = length(s.data) - 1 # s.data includes NULL terminator
 
 function reverse(s::UTF16String)

@@ -306,7 +306,7 @@ function hist_getline(file)
     while !eof(file)
         line = utf8(readline(file))
         isempty(line) && return line
-        line[1] in "\r\n" || return line
+        startswith(line, ['\r', '\n']) || return line
     end
     return utf8("")
 end
@@ -318,7 +318,7 @@ function hist_from_file(hp, file)
         mode = :julia
         line = hist_getline(file)
         isempty(line) && break
-        line[1] == '#' || error(invalid_history_message)
+        startswith(line, '#') || error(invalid_history_message)
         while !isempty(line)
             m = match(r"^#\s*(\w+)\s*:\s*(.*?)\s*$", line)
             m == nothing && break
@@ -328,10 +328,10 @@ function hist_from_file(hp, file)
             line = hist_getline(file)
         end
         isempty(line) && break
-        line[1] == '\t' || error(invalid_history_message)
+        startswith(line, '\t') || error(invalid_history_message)
         lines = UTF8String[]
         while !isempty(line)
-            push!(lines, chomp(line[2:end]))
+            push!(lines, chomp(line[2codeunit:end]))
             eof(file) && break
             Base.peek(file) == '\t' || break
             line = hist_getline(file)
@@ -527,10 +527,10 @@ function history_search(hist::REPLHistoryProvider, query_buffer::IOBuffer, respo
     for idx in idxs
         h = hist.history[idx]
         match = searchfunc(h, searchdata)
-        if match != 0:-1 && h != response_str && haskey(hist.mode_mapping, hist.modes[idx])
+        if match != StringIndex(0):StringIndex(-1) && h != response_str && haskey(hist.mode_mapping, hist.modes[idx])
             truncate(response_buffer, 0)
             write(response_buffer, h)
-            seek(response_buffer, first(match)-1)
+            seek(response_buffer, first(match)-1codeunit)
             hist.cur_idx = idx
             return true
         end
@@ -749,7 +749,7 @@ function setup_interface(repl::LineEditREPL; hascolor = repl.hascolor, extra_rep
         # Bracketed Paste Mode
         "\e[200~" => (s,o...)->begin
             ps = LineEdit.state(s, LineEdit.mode(s))
-            input = readuntil(ps.terminal, "\e[201~")[1:(end-6)]
+            input = readuntil(ps.terminal, "\e[201~")[1:(end-6codeunit)]
             input = replace(input, '\r', '\n')
             if position(LineEdit.buffer(s)) == 0
                 indent = Base.indentation(input)[1]
@@ -870,7 +870,7 @@ end
 function ends_with_semicolon(line)
     match = rsearch(line, ';')
     if match != 0
-        for c in line[(match+1):end]
+        for c in line[nextind(line, match):end]
             isspace(c) || return c == '#'
         end
         return true

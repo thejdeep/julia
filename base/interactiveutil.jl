@@ -19,7 +19,7 @@ function edit(file::AbstractString, line::Integer)
     else
         edpath = edname = editor
     end
-    issrc = length(file)>2 && file[end-2:end] == ".jl"
+    issrc = length(file)>2 && file[end-2codeunit:end] == ".jl"
     if issrc
         f = find_source_file(file)
         f != nothing && (file = f)

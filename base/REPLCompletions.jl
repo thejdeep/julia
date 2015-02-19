@@ -107,7 +107,7 @@ function complete_keyword(s::ByteString)
     sorted_keywords[r]
 end
 
-function complete_path(path::AbstractString, pos)
+function complete_path(path::AbstractString, pos::StringIndex)
     dir, prefix = splitdir(path)
     local files
     try
@@ -116,10 +116,10 @@ function complete_path(path::AbstractString, pos)
         elseif isdir(dir)
             files = readdir(dir)
         else
-            return UTF8String[], 0:-1, false
+            return UTF8String[], StringIndex(0):StringIndex(-1), false
         end
     catch
-        return UTF8String[], 0:-1, false
+        return UTF8String[], StringIndex(0):StringIndex(-1), false
     end
 
     matches = UTF8String[]
@@ -131,7 +131,7 @@ function complete_path(path::AbstractString, pos)
         end
     end
     matches = UTF8String[replace(s, r"\s", "\\ ") for s in matches]
-    return matches, nextind(path, pos - sizeof(prefix) - length(matchall(r" ", prefix))):pos, length(matches) > 0
+    return matches, nextind(path, pos - (sizeof(prefix) - length(matchall(r" ", prefix))) * codeunit):pos, length(matches) > 0
 end
 
 function complete_methods(input::AbstractString)
@@ -153,9 +153,9 @@ const whitespace_chars = [" \t\n\r"...]
 
 # Aux function to detect whether we're right after a
 # using or import keyword
-function afterusing(string::ByteString, startpos::Int)
-    (isempty(string) || startpos == 0) && return false
-    str = string[1:prevind(string,startpos)]
+function afterusing(string::ByteString, startpos::StringIndex)
+    (isempty(string) || startpos < start(string)) && return false
+    str = string[1:prevind(string, startpos)]
     isempty(str) && return false
     rstr = reverse(str)
     r = search(rstr, r"\s(gnisu|tropmi)\b")
@@ -164,7 +164,7 @@ function afterusing(string::ByteString, startpos::Int)
     return ismatch(r"^\b(using|import)\s*(\w+\s*,\s*)*\w*$", str[fr:end])
 end
 
-function latex_completions(string, pos)
+function latex_completions(string::AbstractString, pos::StringIndex)
     slashpos = rsearch(string, '\\', pos)
     if rsearch(string, whitespace_chars, pos) < slashpos && !(1 < slashpos && (string[prevind(string, slashpos)]=='\\'))
         # latex symbol substitution
@@ -179,22 +179,23 @@ function latex_completions(string, pos)
             return (true, (sort!(collect(latex_names)), slashpos:pos, true))
         end
     end
-    return (false, (UTF8String[], 0:-1, false))
+    return (false, (UTF8String[], StringIndex(0):StringIndex(-1), false))
 end
 
-function completions(string, pos)
+function completions(string::AbstractString, pos::StringIndex)
     # First parse everything up to the current position
     partial = string[1:pos]
-    inc_tag = Base.incomplete_tag(parse(partial , raise=false))
+    inc_tag = Base.incomplete_tag(parse(partial, raise=false))
     if inc_tag in [:cmd, :string]
         m = match(r"[\t\n\r\"'`@\$><=;|&\{]| (?!\\)", reverse(partial))
         startpos = nextind(partial, reverseind(partial, m.offset))
         r = startpos:pos
         paths, r, success = complete_path(replace(string[r], r"\\ ", " "), pos)
         if inc_tag == :string &&
-           length(paths) == 1 &&                              # Only close if there's a single choice,
-           !isdir(replace(string[startpos:start(r)-1] * paths[1], r"\\ ", " ")) &&  # except if it's a directory
-           (length(string) <= pos || string[pos+1] != '"')    # or there's already a " at the cursor.
+           length(paths) == 1 &&                                   # Only close if there's a single choice,
+           !isdir(replace(string[startpos:first(r)-1codeunit] *    # except if it's a directory
+                          paths[1], r"\\ ", " ")) &&
+           (endof(string) <= pos || string[pos+1codeunit] != '"') # or there's already a " at the cursor.
             paths[1] *= "\""
         end
         #Latex symbols can be completed for strings
@@ -204,14 +205,14 @@ function completions(string, pos)
     ok, ret = latex_completions(string, pos)
     ok && return ret
     # Make sure that only latex_completions is working on strings
-    inc_tag==:string && return UTF8String[], 0:-1, false
+    inc_tag==:string && return UTF8String[], StringIndex(0):StringIndex(-1), false
 
     if inc_tag == :other && string[pos] == '('
         endpos = prevind(string, pos)
         startpos = nextind(string, rsearch(string, non_identifier_chars, endpos))
         return complete_methods(string[startpos:endpos]), startpos:endpos, false
     elseif inc_tag == :comment
-        return UTF8String[], 0:-1, false
+        return UTF8String[], StringIndex(0):StringIndex(-1), false
     end
 
     dotpos = rsearch(string, '.', pos)
@@ -234,7 +235,7 @@ function completions(string, pos)
                     if pname[1] != '.' && pname != "METADATA" &&
                           pname != "REQUIRE" && startswith(pname, s)
                         if isfile(joinpath(dir, pname))
-                            endswith(pname, ".jl") && push!(suggestions, pname[1:end-3])
+                            endswith(pname, ".jl") && push!(suggestions, pname[1:end-3codeunit])
                         else
                             push!(suggestions, pname)
                         end
@@ -245,25 +246,25 @@ function completions(string, pos)
         ffunc = (mod,x)->(isdefined(mod, x) && isa(mod.(x), Module))
         comp_keywords = false
     end
-    startpos == 0 && (pos = -1)
-    dotpos <= startpos && (dotpos = startpos - 1)
+    startpos == StringIndex(0) && (pos = StringIndex(-1))
+    dotpos <= startpos && (dotpos = startpos-1codeunit)
     s = string[startpos:pos]
     comp_keywords && append!(suggestions, complete_keyword(s))
     append!(suggestions, complete_symbol(s, ffunc))
-    return sort(unique(suggestions)), (dotpos+1):pos, true
+    return sort(unique(suggestions)), (dotpos+1codeunit):pos, true
 end
 
-function shell_completions(string, pos)
+function shell_completions(string::AbstractString, pos::StringIndex)
     # First parse everything up to the current position
     scs = string[1:pos]
     local args, last_parse
     try
         args, last_parse = Base.shell_parse(scs, true)
     catch
-        return UTF8String[], 0:-1, false
+        return UTF8String[], StringIndex(0):StringIndex(-1), false
     end
     # Now look at the last thing we parsed
-    isempty(args.args[end].args) && return UTF8String[], 0:-1, false
+    isempty(args.args[end].args) && return UTF8String[], StringIndex(0):StringIndex(-1), false
     arg = args.args[end].args[end]
     if all(map(s -> isa(s, AbstractString), args.args[end].args))
         # Treat this as a path (perhaps give a list of comands in the future as well?)
@@ -272,10 +273,10 @@ function shell_completions(string, pos)
         r = first(last_parse):prevind(last_parse, last(last_parse))
         partial = scs[r]
         ret, range = completions(partial, endof(partial))
-        range += first(r) - 1
+        range += first(r) - 1codeunit
         return ret, range, true
     end
-    return UTF8String[], 0:-1, false
+    return UTF8String[], StringIndex(0):StringIndex(-1), false
 end
 
 end # module

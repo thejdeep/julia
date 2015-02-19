@@ -65,7 +65,7 @@ input_string_newlines(s::PromptState) = count(c->(c == '\n'), input_string(s))
 function input_string_newlines_aftercursor(s::PromptState)
     str = input_string(s)
     length(str) == 0 && return 0
-    rest = str[nextind(str, position(s.input_buffer)):end]
+    rest = str[nextind(str, StringIndex(position(s.input_buffer))):end]
     return count(c->(c == '\n'), rest)
 end
 
@@ -95,7 +95,7 @@ function common_prefix(completions)
     ret = ""
     c1 = completions[1]
     isempty(c1) && return ret
-    i = 1
+    i = start(c1)
     cc, nexti = next(c1, i)
     while true
         for c in completions

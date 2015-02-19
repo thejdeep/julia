@@ -86,8 +86,8 @@ VersionNumber(v::AbstractString) = begin
     major = int(major)
     minor = minor != nothing ? int(minor) : 0
     patch = patch != nothing ? int(patch) : 0
-    if prerl != nothing && !isempty(prerl) && prerl[1] == '-'
-        prerl = prerl[2:end] # strip leading '-'
+    if prerl != nothing && !isempty(prerl) && startswith(prerl, '-')
+        prerl = prerl[2codeunit:end] # strip leading '-'
     end
     prerl = prerl != nothing ? split_idents(prerl) : minus == "-" ? ("",) : ()
     build = build != nothing ? split_idents(build) : plus  == "+" ? ("",) : ()
@@ -185,8 +185,8 @@ function check_new_version(existing::Vector{VersionNumber}, ver::VersionNumber)
           thisminor(ver) != thisminor(prv) ? nextminor(prv) : nextpatch(prv)
     ver <= nxt || error("$ver skips over $nxt")
     thispatch(ver) <= ver && return # regular or build release
-    idx < length(existing) && thispatch(existing[idx+1]) <= nxt &&
-        error("$ver is a pre-release of existing version $(existing[idx+1])")
+    idx < length(existing) && thispatch(existing[idx+1codeunit]) <= nxt &&
+        error("$ver is a pre-release of existing version $(existing[idx+1codeunit])")
     return # acceptable new version
 end
 

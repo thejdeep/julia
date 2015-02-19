@@ -11,9 +11,12 @@ immutable UTF32String <: DirectIndexString
     end
 end
 
-next(s::UTF32String, i::Int) = (s.data[i], i+1)
-endof(s::UTF32String) = length(s.data) - 1
+next(s::UTF32String, i::StringIndex) = (s.data[i.i], StringIndex(i.i+1))
+endof(s::UTF32String) = StringIndex(length(s.data) - 1)
 length(s::UTF32String) = length(s.data) - 1
+
+# TODO: deprecate
+next(s::UTF32String, i::Int) = (s.data[i], i+1)
 
 function utf32(c::Integer...)
     a = Array(Char, length(c) + 1)

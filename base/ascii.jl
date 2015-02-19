@@ -7,13 +7,25 @@
 
 ## required core functionality ##
 
-endof(s::ASCIIString) = length(s.data)
-getindex(s::ASCIIString, i::Int) = (x=s.data[i]; x < 0x80 ? char(x) : '\ufffd')
+#+(i::StringIndex{ASCIIString}, j::Integer) = StringIndex{ASCIIString}(i.i + j)
+#-(i::StringIndex{ASCIIString}, j::Integer) = StringIndex{ASCIIString}(i.i - j)
+
+endof(s::ASCIIString) = StringIndex(length(s.data))
+getindex(s::ASCIIString, i::StringIndex) = (x=s.data[i.i]; x < 0x80 ? char(x) : '\ufffd')
 
 ## overload methods for efficiency ##
 
 sizeof(s::ASCIIString) = sizeof(s.data)
 
+getindex(s::ASCIIString, r::StringRange) = ASCIIString(getindex(s.data, r.start.i:r.stop.i))
+getindex(s::ASCIIString, indx::AbstractVector{StringIndex}) = ASCIIString([s.data[i.i] for i in indx])
+search(s::ASCIIString, c::Char, i::StringIndex) =
+    c < char(0x80) ? StringIndex(search(s.data, uint8(c), i.i)) : StringIndex(0)
+rsearch(s::ASCIIString, c::Char, i::StringIndex) =
+    c < char(0x80) ? StringIndex(rsearch(s.data, uint8(c), i.i)) : StringIndex(0)
+
+# TODO: deprecate
+getindex(s::ASCIIString, i::Int) = (x=s.data[i]; x < 0x80 ? char(x) : '\ufffd')
 getindex(s::ASCIIString, r::Vector) = ASCIIString(getindex(s.data,r))
 getindex(s::ASCIIString, r::UnitRange{Int}) = ASCIIString(getindex(s.data,r))
 getindex(s::ASCIIString, indx::AbstractVector{Int}) = ASCIIString(s.data[indx])
@@ -39,15 +51,16 @@ function string(c::ASCIIString...)
 end
 
 function ucfirst(s::ASCIIString)
-    if length(s) > 0 && 'a' <= s[1] <= 'z'
+    if length(s) > 0 && 'a' <= s[start(s)] <= 'z'
         t = ASCIIString(copy(s.data))
         t.data[1] -= 32
         return t
     end
     return s
 end
+
 function lcfirst(s::ASCIIString)
-    if length(s) > 0 && 'A' <= s[1] <= 'Z'
+    if length(s) > 0 && 'A' <= s[start(s)] <= 'Z'
         t = ASCIIString(copy(s.data))
         t.data[1] += 32
         return t
@@ -70,6 +83,7 @@ function uppercase(s::ASCIIString)
     end
     return s
 end
+
 function lowercase(s::ASCIIString)
     d = s.data
     for i = 1:length(d)

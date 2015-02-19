@@ -8,7 +8,7 @@ function Base.string(dt::DateTime)
     hh = lpad(h,2,"0")
     mii = lpad(mi,2,"0")
     ss = lpad(s,2,"0")
-    ms = millisecond(dt) == 0 ? "" : string(millisecond(dt)/1000.0)[2:end]
+    ms = millisecond(dt) == 0 ? "" : string(millisecond(dt)/1000.0)[2codeunit:end]
     return "$yy-$mm-$(dd)T$hh:$mii:$ss$(ms)"
 end
 Base.show(io::IO,x::DateTime) = print(io,string(x))
@@ -99,23 +99,23 @@ end
 slotparse(slot::Slot{Millisecond},x) = !ismatch(r"[^0-9\s]",x) ? slot.period(parsefloat("."*x)*1000.0) : throw(SLOTERROR)
 slotparse(slot::Slot{DayOfWeekSlot},x) = nothing
 
-function getslot(x,slot::DelimitedSlot,df,cursor)
-    endind = first(search(x,df.trans[slot.i],cursor+1))
-    if endind == 0 # we didn't find the next delimiter
+function getslot(x::AbstractString,slot::DelimitedSlot,df,cursor)
+    endind = first(search(x,df.trans[slot.i],cursor+1codeunit))
+    if endind == StringIndex(0) # we didn't find the next delimiter
         s = x[cursor:end]
-        return (endof(x)+1, isdigit(s) ? slotparse(slot,s) : default(slot.period))
+        return (endof(x)+1codeunit, isdigit(s) ? slotparse(slot,s) : default(slot.period))
     end
-    return endind+1, slotparse(slot,x[cursor:(endind-1)])
+    return endind+1codeunit, slotparse(slot,x[cursor:(endind-1codeunit)])
 end
-getslot(x,slot,df,cursor) = (cursor+slot.width, slotparse(slot,x[cursor:(cursor+slot.width-1)]))
+getslot(s::AbstractString,slot,df,cursor) = (cursor+CodeUnit(slot.width), slotparse(slot,s[cursor:(cursor+CodeUnit(slot.width-1))]))
 
 function parse(x::AbstractString,df::DateFormat)
     x = strip(replace(x, r"#.*$", ""))
     x = replace(x,df.begtran,"")
     isempty(x) && throw(ArgumentError("Cannot parse empty format string"))
-    (typeof(df.slots[1]) <: DelimitedSlot && first(search(x,df.trans[1])) == 0) && throw(ArgumentError("Delimiter mismatch. Couldn't find first delimiter, \"$(df.trans[1])\", in date string"))
+    (typeof(df.slots[1]) <: DelimitedSlot && first(search(x,df.trans[1])) == StringIndex(0)) && throw(ArgumentError("Delimiter mismatch. Couldn't find first delimiter, \"$(df.trans[1])\", in date string"))
     periods = Period[]
-    cursor = 1
+    cursor = start(x)
     for slot in df.slots
         cursor, pe = getslot(x,slot,df,cursor)
         pe != nothing && push!(periods,pe)
@@ -124,7 +124,7 @@ function parse(x::AbstractString,df::DateFormat)
     return sort!(periods,rev=true,lt=periodisless)
 end
 
-slotformat(slot::Slot{Year},dt) = lpad(string(value(slot.period(dt))),slot.width,"0")[(end-slot.width+1):end]
+slotformat(slot::Slot{Year},dt) = lpad(string(value(slot.period(dt))),slot.width,"0")[(end-CodeUnit(slot.width-1)):end]
 slotformat(slot,dt) = lpad(string(value(slot.period(dt))),slot.width,"0")
 function slotformat(slot::Slot{Month},dt)
     if slot.option == 0
@@ -142,7 +142,7 @@ function slotformat(slot::Slot{DayOfWeekSlot},dt)
         return VALUETODAYOFWEEK[slot.locale][dayofweek(dt)]
     end
 end
-slotformat(slot::Slot{Millisecond},dt) = rpad(string(millisecond(dt)/1000.0)[3:end], slot.width, "0")
+slotformat(slot::Slot{Millisecond},dt) = rpad(string(millisecond(dt)/1000.0)[3codeunit:end], slot.width, "0")
 
 function format(dt::TimeType,df::DateFormat)
     f = ""

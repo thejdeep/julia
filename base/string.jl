@@ -10,6 +10,10 @@ println(xs...) = println(STDOUT, xs...)
 ## core string functions ##
 
 endof(s::AbstractString) = error("you must implement endof(", typeof(s), ")")
+next(s::AbstractString, i::StringIndex) = error("you must implement next(", typeof(s), ",StringIndex)")
+next(s::DirectIndexString, i::StringIndex) = (s[i], i+1codeunit)
+
+# TODO: deprecate
 next(s::AbstractString, i::Int) = error("you must implement next(", typeof(s), ",Int)")
 next(s::DirectIndexString, i::Int) = (s[i],i+1)
 next(s::AbstractString, i::Integer) = next(s,int(i))
@@ -18,8 +22,8 @@ next(s::AbstractString, i::Integer) = next(s,int(i))
 
 function print_to_string(xs...)
     # specialized for performance reasons
-    s = IOBuffer(Array(UInt8,isa(xs[1],AbstractString) ? endof(xs[1]) : 0), true, true)
-    truncate(s,0)
+    s = IOBuffer(Array(UInt8, isa(xs[1], AbstractString) ? endof(xs[1]).i : 0), true, true)
+    truncate(s, 0)
     for x in xs
         print(s, x)
     end
@@ -52,8 +56,17 @@ convert(::Type{Symbol}, s::AbstractString) = symbol(s)
 
 ## generic supplied functions ##
 
-start(s::AbstractString) = 1
-done(s::AbstractString,i) = (i > endof(s))
+start(s::AbstractString) = StringIndex(1)
+#start{S<:AbstractString}(s::S) = StringIndex{S}(1)
+done(s::AbstractString, i::StringIndex) = (i > endof(s))
+getindex(s::AbstractString, i::StringIndex) = next(s, i)[1]
+#getindex{S<:AbstractString}(s::S, i::StringIndex{S}) = next(s, i)[1]
+getindex(s::AbstractString, v::AbstractVector) =
+    sprint(length(v), io->(for i in v write(io,s[i]) end))
+
+# TODO: deprecate (except for i==1)
+done(s::AbstractString, i::Integer) = (i > endof(s).i)
+
 getindex(s::AbstractString, i::Int) = next(s,i)[1]
 getindex(s::AbstractString, i::Integer) = s[int(i)]
 getindex(s::AbstractString, x::Real) = s[to_index(x)]
@@ -76,7 +89,7 @@ eltype{T<:AbstractString}(::Type{T}) = Char
 (*)(s::AbstractString...) = string(s...)
 (^)(s::AbstractString, r::Integer) = repeat(s,r)
 
-length(s::DirectIndexString) = endof(s)
+length(s::DirectIndexString) = endof(s).i
 function length(s::AbstractString)
     i = start(s)
     if done(s,i)
@@ -91,9 +104,24 @@ function length(s::AbstractString)
         n += 1
         i = j
     end
+    return i.i
 end
 
-isvalid(s::DirectIndexString, i::Integer) = (start(s) <= i <= endof(s))
+isvalid(s::DirectIndexString, i::StringIndex) = (start(s) <= i <= endof(s))
+#isvalid{S<:DirectIndexString}(s::S, i::StringIndex{S}) = (start(s) <= i <= endof(s))
+function isvalid(s::AbstractString, i::StringIndex)
+#function isvalid{S<:AbstractString}(s::S, i::StringIndex{S})
+    done(s,i) && return false
+    try
+        next(s,i)
+        true
+    catch
+        false
+    end
+end
+
+# TODO: deprecate
+isvalid(s::DirectIndexString, i::Integer) = (start(s).i <= i <= endof(s).i)
 function isvalid(s::AbstractString, i::Integer)
     i < 1 && return false
     done(s,i) && return false
@@ -105,51 +133,54 @@ function isvalid(s::AbstractString, i::Integer)
     end
 end
 
-prevind(s::DirectIndexString, i::Integer) = i-1
+
+prevind(s::DirectIndexString, i::StringIndex) = StringIndex(i.i - 1)
+nextind(s::DirectIndexString, i::StringIndex) = StringIndex(i.i + 1)
+
 prevind(s::AbstractArray   , i::Integer) = i-1
-nextind(s::DirectIndexString, i::Integer) = i+1
 nextind(s::AbstractArray   , i::Integer) = i+1
 
-function prevind(s::AbstractString, i::Integer)
+function prevind(s::AbstractString, i::StringIndex)
     e = endof(s)
     if i > e
         return e
     end
-    j = i-1
-    while j >= 1
-        if isvalid(s,j)
+    j = i-1codeunit
+    while j >= start(s)
+        if isvalid(s, j)
             return j
         end
-        j -= 1
+        j -= 1codeunit
     end
-    return 0 # out of range
+    return StringIndex(0) # out of range
 end
 
-function nextind(s::AbstractString, i::Integer)
+function Base.nextind(s::AbstractString, i::StringIndex)
     e = endof(s)
-    if i < 1
-        return 1
+    if i < start(s)
+        return start(s)
     end
     if i > e
-        return i+1
+        return i+1codeunit
     end
-    for j = i+1:e
-        if isvalid(s,j)
+    j = i+1codeunit
+    while j <= e
+        if isvalid(s, j)
             return j
         end
+        j += 1codeunit
     end
-    next(s,e)[2] # out of range
+    return j # out of range
 end
 
-checkbounds(s::AbstractString, i::Integer) = start(s) <= i <= endof(s) || throw(BoundsError(s, i))
-checkbounds(s::AbstractString, i::Real) = checkbounds(s, to_index(i))
-checkbounds{T<:Integer}(s::AbstractString, r::Range{T}) = isempty(r) || (minimum(r) >= start(s) && maximum(r) <= endof(s)) || throw(BoundsError(s, r))
-checkbounds{T<:Real}(s::AbstractString, I::AbstractArray{T}) = all(i -> checkbounds(s, i), I)
+checkbounds(s::AbstractString, i::StringIndex) = start(s) <= i <= endof(s) || throw(BoundsError(s, i))
+checkbounds(s::AbstractString, r::StringRange) = isempty(r) || (minimum(r) >= start(s) && maximum(r) <= endof(s)) || throw(BoundsError(s, r))
+checkbounds(s::AbstractString, I::AbstractArray{StringIndex}) = all(i -> checkbounds(s, i), I)
 
-ind2chr(s::DirectIndexString, i::Integer) = begin checkbounds(s,i); i end
-chr2ind(s::DirectIndexString, i::Integer) = begin checkbounds(s,i); i end
+ind2chr(s::DirectIndexString, i::StringIndex) = begin checkbounds(s, i); i.i end
+chr2ind(s::DirectIndexString, i::StringIndex) = begin checkbounds(s, i); i.i end
 
-function ind2chr(s::AbstractString, i::Integer)
+function ind2chr(s::AbstractString, i::StringIndex)
     s[i] # throws error if invalid
     j = 1
     k = start(s)
@@ -164,7 +195,9 @@ function ind2chr(s::AbstractString, i::Integer)
 end
 
 function chr2ind(s::AbstractString, i::Integer)
-    i < start(s) && throw(BoundsError(s, i))
+    # Was:
+    # i < start(s) && throw(BoundsError(s, i))
+    i <= 0 && throw(BoundsError(s, i))
     j = 1
     k = start(s)
     while true
@@ -177,11 +210,89 @@ function chr2ind(s::AbstractString, i::Integer)
     end
 end
 
+
+# TODO: deprecate
+prevind(s::DirectIndexString, i::Integer) = i-1
+nextind(s::DirectIndexString, i::Integer) = i+1
+
+function prevind(s::AbstractString, i::Integer)
+    e = endof(s).i
+    if i > e
+        return e
+    end
+    j = i-1
+    while j >= 1
+        if isvalid(s,j)
+            return j
+        end
+        j -= 1
+    end
+    return 0 # out of range
+end
+
+function nextind(s::AbstractString, i::Integer)
+    e = endof(s).i
+    if i < 1
+        return 1
+    end
+    if i > e
+        return i+1
+    end
+    for j = i+1:e
+        if isvalid(s,j)
+            return j
+        end
+    end
+    next(s,e)[2] # out of range
+end
+
+checkbounds(s::AbstractString, i::Integer) = start(s).i <= i <= endof(s).i || throw(BoundsError(s, i))
+checkbounds(s::AbstractString, i::Real) = checkbounds(s, to_index(i))
+checkbounds{T<:Integer}(s::AbstractString, r::Range{T}) = isempty(r) || (minimum(r) >= start(s).i && maximum(r) <= endof(s).i) || throw(BoundsError(s, r))
+checkbounds{T<:Real}(s::AbstractString, I::AbstractArray{T}) = all(i -> checkbounds(s, i), I)
+
+ind2chr(s::DirectIndexString, i::Integer) = begin checkbounds(s,i); i end
+chr2ind(s::DirectIndexString, i::Integer) = begin checkbounds(s,i); i end
+
+function ind2chr(s::AbstractString, i::Integer)
+    s[i] # throws error if invalid
+    j = 1
+    k = start(s).i
+    while true
+        c, l = next(s,k)
+        if i <= k
+            return j
+        end
+        j += 1
+        k = l
+    end
+end
+
 typealias Chars Union(Char,AbstractVector{Char},Set{Char})
 
+function search(s::AbstractString, c::Chars, i::StringIndex=start(s))
+    if isempty(c)
+        return start(s) <= i <= nextind(s,endof(s)) ? i :
+               throw(BoundsError(s, i))
+    end
+    if i < start(s)
+        throw(BoundsError(s, i))
+    end
+    i = nextind(s, StringIndex(i.i - 1))
+    while !done(s,i)
+        d, j = next(s,i)
+        if d in c
+            return i
+        end
+        i = j
+    end
+    return StringIndex(0)
+end
+
+# TODO: deprecate
 function search(s::AbstractString, c::Chars, i::Integer)
     if isempty(c)
-        return 1 <= i <= nextind(s,endof(s)) ? i :
+        return 1 <= i <= nextind(s,endof(s).i) ? i :
                throw(BoundsError(s, i))
     end
     if i < 1
@@ -191,25 +302,24 @@ function search(s::AbstractString, c::Chars, i::Integer)
     while !done(s,i)
         d, j = next(s,i)
         if d in c
-            return i
+            return i.i
         end
         i = j
     end
     return 0
 end
-search(s::AbstractString, c::Chars) = search(s,c,start(s))
 
-in(c::Char, s::AbstractString) = (search(s,c)!=0)
+in(c::Char, s::AbstractString) = (search(s, c) != StringIndex(0))
 
-function _searchindex(s, t, i)
+function _searchindex(s::AbstractString, t::AbstractString, i::StringIndex)
     if isempty(t)
-        return 1 <= i <= nextind(s,endof(s)) ? i :
+        return start(s) <= i <= nextind(s,endof(s)) ? i :
                throw(BoundsError(s, i))
     end
     t1, j2 = next(t,start(t))
     while true
         i = search(s,t1,i)
-        if i == 0 return 0 end
+        if i == StringIndex(0) return StringIndex(0) end
         c, ii = next(s,i)
         j = j2; k = ii
         matched = true
@@ -236,7 +346,7 @@ function _search_bloom_mask(c)
     uint64(1) << (c & 63)
 end
 
-function _searchindex(s::Array, t::Array, i)
+function _searchindex(s::Array, t::Array, i::Integer)
     n = length(t)
     m = length(s)
 
@@ -297,11 +407,53 @@ function _searchindex(s::Array, t::Array, i)
     0
 end
 
-searchindex(s::Union(Array{UInt8,1},Array{Int8,1}),t::Union(Array{UInt8,1},Array{Int8,1}),i) = _searchindex(s,t,i)
-searchindex(s::AbstractString, t::AbstractString, i::Integer) = _searchindex(s,t,i)
-searchindex(s::AbstractString, t::AbstractString) = searchindex(s,t,start(s))
+searchindex(s::AbstractString, t::AbstractString, i::StringIndex=start(s)) = _searchindex(s, t, i)
+searchindex(s::Union(Array{UInt8,1}, Array{Int8,1}), t::Union(Array{UInt8,1}, Array{Int8,1}), i) = _searchindex(s, t, i)
 
-function searchindex(s::ByteString, t::ByteString, i::Integer=1)
+# TODO: deprecate
+function _searchindex(s::AbstractString, t::AbstractString, i::Integer)
+    if isempty(t)
+        return 1 <= i <= nextind(s,endof(s)) ? i :
+               throw(BoundsError(s, i))
+    end
+    t1, j2 = next(t,start(t))
+    while true
+        i = search(s,t1,i)
+        if i == 0 return 0 end
+        c, ii = next(s,i)
+        j = j2; k = ii
+        matched = true
+        while !done(t,j)
+            if done(s,k)
+                matched = false
+                break
+            end
+            c, k = next(s,k)
+            d, j = next(t,j)
+            if c != d
+                matched = false
+                break
+            end
+        end
+        if matched
+            return i
+        end
+        i = ii
+    end
+end
+
+searchindex(s::AbstractString, t::AbstractString, i::Integer) = _searchindex(s,t,i)
+
+function searchindex(s::ByteString, t::ByteString, i::StringIndex=start(s))
+    if length(t) == 1
+        search(s, t[start(t)], i)
+    else
+        StringIndex(searchindex(s.data, t.data, i.i))
+    end
+end
+
+# TODO: deprecate
+function searchindex(s::ByteString, t::ByteString, i::Integer)
     if length(t) == 1
         search(s, t[1], i)
     else
@@ -318,7 +470,27 @@ function search(s::Union(Array{UInt8,1},Array{Int8,1}),t::Union(Array{UInt8,1},A
     end
 end
 
-function search(s::AbstractString, t::AbstractString, i::Integer=start(s))
+function search(s::AbstractString, t::AbstractString, i::StringIndex=start(s))
+    idx = searchindex(s,t,i)
+    if isempty(t)
+        idx:idx-1codeunit
+    else
+        # FIXME: was
+        #  idx:(idx > 0 ? idx + endof(t) - 1 : -1)
+        # Which probably never worked if s and t were of different types
+        idx:(idx >= start(s) ? StringIndex(idx.i + endof(t).i - 1) : StringIndex(-1))
+    end
+end
+
+function rsearch(s::AbstractString, c::Chars, i::StringIndex=endof(s))
+    e = endof(s)
+    j = search(RevString(s), c, StringIndex(e.i - i.i + 1))
+    j == StringIndex(0) && return StringIndex(0)
+    StringIndex(e.i - j.i + 1)
+end
+
+# TODO: deprecate
+function search(s::AbstractString, t::AbstractString, i::Integer)
     idx = searchindex(s,t,i)
     if isempty(t)
         idx:idx-1
@@ -327,16 +499,16 @@ function search(s::AbstractString, t::AbstractString, i::Integer=start(s))
     end
 end
 
-function rsearch(s::AbstractString, c::Chars, i::Integer=endof(s))
+function rsearch(s::AbstractString, c::Chars, i::Integer)
     e = endof(s)
     j = search(RevString(s), c, e-i+1)
     j == 0 && return 0
     e-j+1
 end
 
-function _rsearchindex(s, t, i)
+function _rsearchindex(s::AbstractString, t::AbstractString, i::StringIndex)
     if isempty(t)
-        return 1 <= i <= nextind(s,endof(s)) ? i :
+        return start(s) <= i <= nextind(s, endof(s)) ? i :
                throw(BoundsError(s, i))
     end
     t = RevString(t)
@@ -345,8 +517,8 @@ function _rsearchindex(s, t, i)
     t1, j2 = next(t,start(t))
     while true
         i = rsearch(s,t1,i)
-        if i == 0 return 0 end
-        c, ii = next(rs,l-i+1)
+        if i == StringIndex(0) return StringIndex(0) end
+        c, ii = next(rs, StringIndex(l.i - i.i + 1))
         j = j2; k = ii
         matched = true
         while !done(t,j)
@@ -362,13 +534,13 @@ function _rsearchindex(s, t, i)
             end
         end
         if matched
-            return nextind(s,l-k+1)
+            return nextind(s, StringIndex(l.i - k.i + 1))
         end
-        i = l-ii+1
+        i = StringIndex(l.i - ii.i + 1)
     end
 end
 
-function _rsearchindex(s::Array, t::Array, k)
+function _rsearchindex(s::Array, t::Array, k::Integer)
     n = length(t)
     m = length(s)
 
@@ -429,15 +601,53 @@ function _rsearchindex(s::Array, t::Array, k)
     0
 end
 
-rsearchindex(s::Union(Array{UInt8,1},Array{Int8,1}),t::Union(Array{UInt8,1},Array{Int8,1}),i) = _rsearchindex(s,t,i)
+rsearchindex(s::Union(Array{UInt8,1}, Array{Int8,1}), t::Union(Array{UInt8,1}, Array{Int8,1}), i) = _rsearchindex(s, t, i)
+rsearchindex(s::AbstractString, t::AbstractString, i::StringIndex) = _rsearchindex(s, t, i)
+rsearchindex(s::AbstractString, t::AbstractString) = (isempty(s) && isempty(t)) ? 1 : rsearchindex(s, t, endof(s))
+
+# TODO: deprecate
+function _rsearchindex(s::AbstractString, t::AbstractString, i::Integer)
+    if isempty(t)
+        return 1 <= i <= nextind(s,endof(s)) ? i :
+               throw(BoundsError(s, i))
+    end
+    t = RevString(t)
+    rs = RevString(s)
+    l = endof(s)
+    t1, j2 = next(t,start(t))
+    while true
+        i = rsearch(s,t1,i)
+        if i == 0 return 0 end
+        c, ii = next(rs,l-i+1)
+        j = j2; k = ii
+        matched = true
+        while !done(t,j)
+            if done(rs,k)
+                matched = false
+                break
+            end
+            c, k = next(rs,k)
+            d, j = next(t,j)
+            if c != d
+                matched = false
+                break
+            end
+        end
+        if matched
+            return nextind(s,l-k+1)
+        end
+        i = l-ii+1
+    end
+end
+
 rsearchindex(s::AbstractString, t::AbstractString, i::Integer) = _rsearchindex(s,t,i)
-rsearchindex(s::AbstractString, t::AbstractString) = (isempty(s) && isempty(t)) ? 1 : rsearchindex(s,t,endof(s))
+rsearchindex(s::AbstractString, t::AbstractString) = (isempty(s) && isempty(t)) ? 1 : rsearchindex(s,t,endof(s).i)
 
 function rsearchindex(s::ByteString, t::ByteString)
     if length(t) == 1
         rsearch(s, t[1])
     else
-        rsearchindex(s.data, t.data, length(s.data))
+        StringIndex(rsearchindex(s.data, t.data, length(s.data)))
     end
 end
 
@@ -458,7 +668,22 @@ function rsearch(s::Union(Array{UInt8,1},Array{Int8,1}),t::Union(Array{UInt8,1},
     end
 end
 
-function rsearch(s::AbstractString, t::AbstractString, i::Integer=endof(s))
+function rsearch(s::AbstractString, t::AbstractString, i::StringIndex=endof(s))
+    idx = rsearchindex(s,t,i)
+    if isempty(t)
+        # Was:
+        # idx:idx-1
+        StringIndex(1):StringIndex(0)
+    else
+        # FIXME: was
+        #  idx:(idx > 0 ? idx + endof(t) - 1 : -1)
+        # Which probably never worked if s and t were of different types
+        idx:(idx > StringIndex(0) ? StringIndex(idx.i + endof(t).i - 1) : StringIndex(-1))
+    end
+end
+
+# TODO: deprecate
+function rsearch(s::AbstractString, t::AbstractString, i::Integer)
     idx = rsearchindex(s,t,i)
     if isempty(t)
         idx:idx-1
@@ -467,7 +692,7 @@ function rsearch(s::AbstractString, t::AbstractString, i::Integer=endof(s))
     end
 end
 
-contains(haystack::AbstractString, needle::AbstractString) = searchindex(haystack,needle)!=0
+contains(haystack::AbstractString, needle::AbstractString) = searchindex(haystack, needle) != StringIndex(0)
 
 in(::AbstractString, ::AbstractString) = error("use contains(x,y) for string containment")
 
@@ -553,92 +778,138 @@ immutable GenericString <: AbstractString
 end
 
 endof(s::GenericString) = endof(s.string)
+next(s::GenericString, i::StringIndex) = next(s.string, i)
+
+# TODO: deprecate
 next(s::GenericString, i::Int) = next(s.string, i)
 
 ## substrings reference original strings ##
 
 immutable SubString{T<:AbstractString} <: AbstractString
     string::T
-    offset::Int
-    endof::Int
+    offset::StringIndex
+    endof::StringIndex
 
-    function SubString(s::T, i::Int, j::Int)
+    function SubString(s::T, i::StringIndex, j::StringIndex)
         if i > endof(s) || j<i
-            return new(s, i-1, 0)
+            return new(s, i-1codeunit, StringIndex(0))
         else
             if !isvalid(s,i)
                 throw(ArgumentError("invalid SubString index"))
             end
 
-            while !isvalid(s,j) && j > i
-                j -= 1
+            while !isvalid(s, j) && j > i
+                j -= 1codeunit
             end
 
-            o = i-1
-            new(s, o, max(0, j-o))
+            o = i-1codeunit
+            new(s, o, max(StringIndex(0), StringIndex(j.i - o.i)))
         end
     end
 end
-SubString{T<:AbstractString}(s::T, i::Int, j::Int) = SubString{T}(s, i, j)
-SubString(s::SubString, i::Int, j::Int) = SubString(s.string, s.offset+i, s.offset+j)
+
+SubString{T<:AbstractString}(s::T, i::StringIndex, j::StringIndex=endof(s)) = SubString{T}(s, i, j)
+SubString(s::SubString, i::StringIndex, j::StringIndex) =
+    SubString(s.string, StringIndex(s.offset.i + i.i), StringIndex(s.offset.i + j.i))
+SubString(s::AbstractString, i::StringIndex) = SubString(s, i, endof(s))
+
+# TODO: deprecate
+SubString{T<:AbstractString}(s::T, i::Int, j::Int) = SubString{T}(s, StringIndex(i), StringIndex(j))
+SubString(s::SubString, i::Int, j::Int) = SubString(s.string, StringIndex(s.offset.i + i), StringIndex(s.offset.i + j))
 SubString(s::AbstractString, i::Integer, j::Integer) = SubString(s, int(i), int(j))
-SubString(s::AbstractString, i::Integer) = SubString(s, i, endof(s))
+SubString(s::AbstractString, i::Integer) = SubString(s, i, endof(s).i)
 
 write{T<:ByteString}(to::IOBuffer, s::SubString{T}) =
-    s.endof==0 ? 0 : write_sub(to, s.string.data, s.offset+1, next(s,s.endof)[2]-1)
+    s.endof == StringIndex(0) ? 0 : write_sub(to, s.string.data, s.offset.i + 1, next(s, s.endof)[2].i - 1)
 
-sizeof(s::SubString{ASCIIString}) = s.endof
-sizeof(s::SubString{UTF8String}) = s.endof == 0 ? 0 : next(s,s.endof)[2]-1
+sizeof(s::SubString{ASCIIString}) = s.endof.i
+sizeof(s::SubString{UTF8String}) = s.endof.i == 0 ? 0 : (next(s, s.endof)[2].i - 1)
 
 # TODO: length(s::SubString) = ??
 # default implementation will work but it's slow
 # can this be delegated efficiently somehow?
 # that may require additional string interfaces
-length{T<:DirectIndexString}(s::SubString{T}) = endof(s)
+length{T<:DirectIndexString}(s::SubString{T}) = endof(s).i
 
 function length(s::SubString{UTF8String})
-    return s.endof==0 ? 0 : int(ccall(:u8_charnum, Csize_t, (Ptr{UInt8}, Csize_t),
-                                      pointer(s), next(s,s.endof)[2]-1))
+    return s.endof.i == 0 ? 0 : int(ccall(:u8_charnum, Csize_t, (Ptr{UInt8}, Csize_t),
+                                          pointer(s), next(s, s.endof)[2].i - 1))
 end
 
-function next(s::SubString, i::Int)
-    if i < 1 || i > s.endof
+function next(s::SubString, i::StringIndex)
+    if i < start(s) || i > s.endof
         throw(BoundsError(s, i))
     end
-    c, i = next(s.string, i+s.offset)
-    c, i-s.offset
+    c, i = next(s.string, StringIndex(i.i + s.offset.i))
+    c, StringIndex(i.i - s.offset.i)
 end
 
-function getindex(s::SubString, i::Int)
-    if i < 1 || i > s.endof
+function getindex(s::SubString, i::StringIndex)
+    if i < start(s) || i > s.endof
         throw(BoundsError(s, i))
     end
-    getindex(s.string, i+s.offset)
+    getindex(s.string, StringIndex(i.i + s.offset.i))
 end
 
 endof(s::SubString) = s.endof
 
-function isvalid(s::SubString, i::Integer)
-    return (start(s) <= i <= endof(s)) && isvalid(s.string, s.offset+i)
+function isvalid(s::SubString, i::StringIndex)
+    return (start(s) <= i <= endof(s)) && isvalid(s.string, StringIndex(s.offset.i + i.i))
 end
 
-isvalid{T<:DirectIndexString}(s::SubString{T}, i::Integer) = (start(s) <= i <= endof(s))
+isvalid{T<:DirectIndexString}(s::SubString{T}, i::StringIndex) = (start(s) <= i <= endof(s))
+
+ind2chr{T<:DirectIndexString}(s::SubString{T}, i::StringIndex) = begin checkbounds(s, i); i.i end
+chr2ind{T<:DirectIndexString}(s::SubString{T}, i::Integer) = begin checkbounds(s, StringIndex(i)); i end
+
+nextind(s::SubString, i::StringIndex) = StringIndex(nextind(s.string, StringIndex(i.i + s.offset.i)).i - s.offset.i)
+prevind(s::SubString, i::StringIndex) = StringIndex(prevind(s.string, StringIndex(i.i + s.offset.i)).i - s.offset.i)
+
+# TODO: deprecate
+function next(s::SubString, i::Int)
+    if i < 1 || i > s.endof.i
+        throw(BoundsError(s, i))
+    end
+    c, i = next(s.string, i+s.offset.i)
+    c, i-s.offset.i
+end
+
+function getindex(s::SubString, i::Int)
+    if i < 1 || i > s.endof.i
+        throw(BoundsError(s, i))
+    end
+    getindex(s.string, i+s.offset.i)
+end
+
+function isvalid(s::SubString, i::Integer)
+    return (start(s) <= i <= endof(s)) && isvalid(s.string, s.offset.i+i)
+end
+
+isvalid{T<:DirectIndexString}(s::SubString{T}, i::Integer) = (start(s).i <= i <= endof(s).i)
 
 ind2chr{T<:DirectIndexString}(s::SubString{T}, i::Integer) = begin checkbounds(s,i); i end
 chr2ind{T<:DirectIndexString}(s::SubString{T}, i::Integer) = begin checkbounds(s,i); i end
 
-nextind(s::SubString, i::Integer) = nextind(s.string, i+s.offset)-s.offset
-prevind(s::SubString, i::Integer) = prevind(s.string, i+s.offset)-s.offset
+nextind(s::SubString, i::Integer) = nextind(s.string, i+s.offset.i) - s.offset.i
+prevind(s::SubString, i::Integer) = prevind(s.string, i+s.offset.i) - s.offset.i
 
 convert{T<:AbstractString}(::Type{SubString{T}}, s::T) = SubString(s, 1, endof(s))
 
-bytestring{T <: ByteString}(p::SubString{T}) = bytestring(pointer(p.string.data)+p.offset, nextind(p, p.endof)-1)
+bytestring{T <: ByteString}(p::SubString{T}) = bytestring(pointer(p.string.data)+p.offset.i, nextind(p, p.endof).i - 1)
 
 function serialize{T}(s, ss::SubString{T})
     # avoid saving a copy of the parent string, keeping the type of ss
     invoke(serialize, (Any,Any), s, convert(SubString{T}, convert(T,ss)))
 end
 
+function getindex(s::AbstractString, r::StringRange)
+    if first(r) < start(s) || endof(s) < last(r)
+        throw(BoundsError(s, r))
+    end
+    SubString(s, first(r), last(r))
+end
+
+# TODO: deprecate
 function getindex(s::AbstractString, r::UnitRange{Int})
     if first(r) < 1 || endof(s) < last(r)
         throw(BoundsError(s, r))
@@ -647,10 +918,10 @@ function getindex(s::AbstractString, r::UnitRange{Int})
 end
 
 function convert{P<:Union(Int8,UInt8),T<:ByteString}(::Type{Ptr{P}}, s::SubString{T})
-    if s.offset+s.endof < endof(s.string)
+    if s.endof + CodeUnit(s.offset.i) < endof(s.string)
         throw(ArgumentError("a SubString must coincide with the end of the original string to be convertible to pointer"))
     end
-    convert(Ptr{P}, s.string.data) + s.offset
+    convert(Ptr{P}, s.string.data) + s.offset.i
 end
 
 isascii(s::SubString{ASCIIString}) = true
@@ -684,11 +955,30 @@ end
 
 function endof(s::RepString)
     e = endof(s.string)
-    (next(s.string,e)[2]-1) * (s.repeat-1) + e
+    StringIndex((next(s.string, e)[2].i - 1) * (s.repeat-1) + e.i)
 end
 length(s::RepString) = length(s.string)*s.repeat
 sizeof(s::RepString) = sizeof(s.string)*s.repeat
 
+function next(s::RepString, i::StringIndex)
+    if i < start(s)
+        throw(BoundsError(s, i))
+    end
+    e = endof(s.string)
+    sz = next(s.string, e)[2].i - 1
+
+    r, j = divrem(i.i - 1, sz)
+    j += 1
+
+    if r >= s.repeat || j > e.i
+        throw(BoundsError(s, i))
+    end
+
+    c, k = next(s.string, StringIndex(j))
+    c, StringIndex(k.i - j + i.i)
+end
+
+# TODO: deprecate
 function next(s::RepString, i::Int)
     if i < 1
         throw(BoundsError(s, i))
@@ -736,8 +1026,14 @@ endof(s::RevString) = endof(s.string)
 length(s::RevString) = length(s.string)
 sizeof(s::RevString) = sizeof(s.string)
 
+function next(s::RevString, i::StringIndex)
+    n = endof(s); j = StringIndex(n.i - i.i + 1)
+    (s.string[j], StringIndex(n.i - prevind(s.string, j).i + 1))
+end
+
+# TODO: deprecate
 function next(s::RevString, i::Int)
-    n = endof(s); j = n-i+1
+    n = endof(s).i; j = n-i+1
     (s.string[j], n-prevind(s.string,j)+1)
 end
 
@@ -748,10 +1044,17 @@ isascii(s::RevString{ASCIIString}) = true
 
 ## reverse an index i so that reverse(s)[i] == s[reverseind(s,i)]
 
+reverseind(s::Union(DirectIndexString, SubString{DirectIndexString}), i::StringIndex) = StringIndex(length(s) + 1 - i.i)
+reverseind(s::RevString, i::StringIndex) = StringIndex(endof(s).i - i.i + 1)
+lastidx(s::AbstractString) = StringIndex(nextind(s, endof(s)).i - 1)
+lastidx(s::DirectIndexString) = StringIndex(length(s))
+reverseind(s::SubString, i::StringIndex) =
+    StringIndex(reverseind(s.string, StringIndex(lastidx(s.string).i - s.offset.i - s.endof.i + i.i)).i - s.offset.i)
+
+# TODO: deprecate
 reverseind(s::Union(DirectIndexString,SubString{DirectIndexString}), i::Integer) = length(s) + 1 - i
 reverseind(s::RevString, i::Integer) = endof(s) - i + 1
 lastidx(s::AbstractString) = nextind(s, endof(s)) - 1
-lastidx(s::DirectIndexString) = length(s)
 reverseind(s::SubString, i::Integer) =
     reverseind(s.string, lastidx(s.string)-s.offset-s.endof+i) - s.offset
 
@@ -761,6 +1064,7 @@ immutable RopeString <: AbstractString
     head::AbstractString
     tail::AbstractString
     depth::Int32
+    # FIXME: use StringIndex? (see endof())
     endof::Int
 
     RopeString(h::RopeString, t::RopeString) =
@@ -786,6 +1090,17 @@ RopeString(s::AbstractString) = RopeString(s,"")
 strdepth(s::AbstractString) = 0
 strdepth(s::RopeString) = s.depth
 
+function next(s::RopeString, i::StringIndex)
+    eh = endof(s.head)
+    if i <= eh
+        return next(s.head, i)
+    else
+        c, j = next(s.tail, StringIndex(i.i - eh.i))
+        return c, StringIndex(j.i + eh.i)
+    end
+end
+
+# TODO: deprecate
 function next(s::RopeString, i::Int)
     eh = endof(s.head)
     if i <= eh
@@ -796,7 +1111,7 @@ function next(s::RopeString, i::Int)
     end
 end
 
-endof(s::RopeString) = s.endof
+endof(s::RopeString) = StringIndex(s.endof)
 length(s::RopeString) = length(s.head) + length(s.tail)
 write(io::IO, s::RopeString) = (write(io, s.head); write(io, s.tail))
 sizeof(s::RopeString) = sizeof(s.head) + sizeof(s.tail)
@@ -810,10 +1125,10 @@ uppercase(s::AbstractString) = map(uppercase, s)
 lowercase(s::AbstractString) = map(lowercase, s)
 
 function ucfirst(s::AbstractString)
-    isempty(s) || isupper(s[1]) ? s : string(uppercase(s[1]),s[nextind(s,1):end])
+    isempty(s) || isupper(s[start(s)]) ? s : string(uppercase(s[start(s)]), s[nextind(s, start(s)):end])
 end
 function lcfirst(s::AbstractString)
-    isempty(s) || islower(s[1]) ? s : string(lowercase(s[1]),s[nextind(s,1):end])
+    isempty(s) || islower(s[start(s)]) ? s : string(lowercase(s[start(s)]), s[nextind(s, start(s)):end])
 end
 
 ## string map, filter, has ##
@@ -822,7 +1137,7 @@ map_result(s::AbstractString, a::Vector{UInt8}) = UTF8String(a)
 map_result(s::Union(ASCIIString,SubString{ASCIIString}), a::Vector{UInt8}) = bytestring(a)
 
 function map(f::Function, s::AbstractString)
-    out = IOBuffer(Array(UInt8,endof(s)),true,true)
+    out = IOBuffer(Array(UInt8, endof(s).i), true, true)
     truncate(out,0)
     for c in s
         c2 = f(c)
@@ -835,7 +1150,7 @@ function map(f::Function, s::AbstractString)
 end
 
 function filter(f::Function, s::AbstractString)
-    out = IOBuffer(Array(UInt8,endof(s)),true,true)
+    out = IOBuffer(Array(UInt8, endof(s).i), true, true)
     truncate(out,0)
     for c in s
         if f(c)
@@ -861,11 +1176,17 @@ end
 
 ## string escaping & unescaping ##
 
-escape_nul(s::AbstractString, i::Int) =
+escape_nul(s::AbstractString, i::StringIndex) =
     !done(s,i) && '0' <= next(s,i)[1] <= '7' ? "\\x00" : "\\0"
 
 isxdigit(c::Char) = '0'<=c<='9' || 'a'<=c<='f' || 'A'<=c<='F'
 isxdigit(s::AbstractString) = all(isxdigit, s)
+need_full_hex(s::AbstractString, i::StringIndex) = !done(s,i) && isxdigit(next(s,i)[1])
+
+# TODO: deprecate
+escape_nul(s::AbstractString, i::Int) =
+    !done(s,i) && '0' <= next(s,i)[1] <= '7' ? "\\x00" : "\\0"
+
 need_full_hex(s::AbstractString, i::Int) = !done(s,i) && isxdigit(next(s,i)[1])
 
 function print_escaped(io, s::AbstractString, esc::AbstractString)
@@ -876,7 +1197,7 @@ function print_escaped(io, s::AbstractString, esc::AbstractString)
         c == '\e'       ? print(io, "\\e") :
         c == '\\'       ? print(io, "\\\\") :
         c in esc        ? print(io, '\\', c) :
-        '\a' <= c <= '\r' ? print(io, '\\', "abtnvfr"[int(c)-6]) :
+        '\a' <= c <= '\r' ? print(io, '\\', ['a', 'b', 't', 'n', 'v', 'f', 'r'][int(c)-6]) :
         isprint(c)      ? print(io, c) :
         c <= '\x7f'     ? print(io, "\\x", hex(c, 2)) :
         c <= '\uffff'   ? print(io, "\\u", hex(c, need_full_hex(s,j) ? 4 : 2)) :
@@ -885,7 +1206,7 @@ function print_escaped(io, s::AbstractString, esc::AbstractString)
     end
 end
 
-escape_string(s::AbstractString) = sprint(endof(s), print_escaped, s, "\"")
+escape_string(s::AbstractString) = sprint(endof(s).i, print_escaped, s, "\"")
 function print_quoted(io, s::AbstractString)
     print(io, '"')
     print_escaped(io, s, "\"\$") #"# work around syntax highlighting problem
@@ -966,7 +1287,8 @@ function print_unescaped(io, s::AbstractString)
     end
 end
 
-unescape_string(s::AbstractString) = sprint(endof(s), print_unescaped, s)
+# FIXME: is sizeof() correct here even for UTF-16?
+unescape_string(s::AbstractString) = sprint(sizeof(s), print_unescaped, s)
 
 ## checking UTF-8 & ACSII validity ##
 
@@ -1003,7 +1325,7 @@ end
 
 function unindent(s::AbstractString, indent::Int)
     indent == 0 && return s
-    buf = IOBuffer(Array(UInt8,endof(s)), true, true)
+    buf = IOBuffer(Array(UInt8, endof(s).i), true, true)
     truncate(buf,0)
     a = i = start(s)
     cutting = false
@@ -1065,8 +1387,8 @@ function triplequoted(args...)
     # strip leading blank line
     s = sx[1]
     j = search(s,'\n')
-    if j != 0 && lstrip(s[1:j]) == ""
-        sx[1] = s[j+1:end]
+    if j != StringIndex(0) && lstrip(s[start(s):j]) == ""
+        sx[1] = s[StringIndex(j.i + 1):end]
     end
 
     length(sx) == 1 ? sx[1] : Expr(:call, :string, sx...)
@@ -1089,7 +1411,7 @@ function shell_parse(raw::AbstractString, interp::Bool)
     while !done(r,i)
         c, j = next(r,i)
         if c == '\\' && c_old == ' '
-            i -= 1
+            i = StringIndex(i.i - 1)
             break
         elseif !(c in _default_delims)
             break
@@ -1097,9 +1419,9 @@ function shell_parse(raw::AbstractString, interp::Bool)
         i = j
         c_old = c
     end
-    s = s[1:end-i+1]
+    s = s[start(s):StringIndex(endof(s).i - i.i + 1)]
 
-    last_parse = 0:-1
+    last_parse = StringIndex(0):StringIndex(-1)
     isempty(s) && return interp ? (Expr(:tuple,:()),last_parse) : ([],last_parse)
 
     in_single_quotes = false
@@ -1124,7 +1446,7 @@ function shell_parse(raw::AbstractString, interp::Bool)
     while !done(s,j)
         c, k = next(s,j)
         if !in_single_quotes && !in_double_quotes && isspace(c)
-            update_arg(s[i:j-1])
+            update_arg(s[i:StringIndex(j.i - 1)])
             append_arg()
             j = k
             while !done(s,j)
@@ -1136,7 +1458,7 @@ function shell_parse(raw::AbstractString, interp::Bool)
                 j = k
             end
         elseif interp && !in_single_quotes && c == '$'
-            update_arg(s[i:j-1]); i = k; j = k
+            update_arg(s[i:StringIndex(j.i - 1)]); i = k; j = k
             if done(s,k)
                 error("\$ right before end of command")
             end
@@ -1150,24 +1472,24 @@ function shell_parse(raw::AbstractString, interp::Bool)
         else
             if !in_double_quotes && c == '\''
                 in_single_quotes = !in_single_quotes
-                update_arg(s[i:j-1]); i = k
+                update_arg(s[i:StringIndex(j.i - 1)]); i = k
             elseif !in_single_quotes && c == '"'
                 in_double_quotes = !in_double_quotes
-                update_arg(s[i:j-1]); i = k
+                update_arg(s[i:StringIndex(j.i - 1)]); i = k
             elseif c == '\\'
                 if in_double_quotes
                     if done(s,k)
                         error("unterminated double quote")
                     end
                     if s[k] == '"' || s[k] == '$'
-                        update_arg(s[i:j-1]); i = k
+                        update_arg(s[i:StringIndex(j.i - 1)]); i = k
                         c, k = next(s,k)
                     end
                 elseif !in_single_quotes
                     if done(s,k)
                         error("dangling backslash")
                     end
-                    update_arg(s[i:j-1]); i = k
+                    update_arg(s[i:StringIndex(j.i - 1)]); i = k
                     c, k = next(s,k)
                 end
             end
@@ -1246,6 +1568,22 @@ shell_escape(args::AbstractString...) = sprint(print_shell_escaped, args...)
 
 ## interface to parser ##
 
+function parse(str::AbstractString, pos::StringIndex; greedy::Bool=true, raise::Bool=true)
+    # returns (expr, end_pos). expr is () in case of parse error.
+    ex, i = ccall(:jl_parse_string, Any,
+                  (Ptr{UInt8}, Int32, Int32),
+                  str, pos.i - 1, greedy ? 1:0)
+    if raise && isa(ex,Expr) && is(ex.head,:error)
+        throw(ParseError(ex.args[1]))
+    end
+    if ex == ()
+        raise && throw(ParseError("end of input"))
+        ex = Expr(:error, "end of input")
+    end
+    ex, StringIndex(i + 1) # C is zero-based, Julia is 1-based
+end
+
+# TODO: deprecate
 function parse(str::AbstractString, pos::Int; greedy::Bool=true, raise::Bool=true)
     # returns (expr, end_pos). expr is () in case of parse error.
     ex, pos = ccall(:jl_parse_string, Any,
@@ -1313,7 +1651,7 @@ function _split{T<:AbstractString,U<:Array}(str::T, splitter, limit::Integer, ke
     n = endof(str)
     r = search(str,splitter,i)
     j, k = first(r), nextind(str,last(r))
-    while 0 < j <= n && length(strs) != limit-1
+    while start(str) <= j <= n && length(strs) != limit-1
         if i < k
             if keep_empty || i < j
                 push!(strs, SubString(str,i,prevind(str,j)))
@@ -1322,6 +1660,7 @@ function _split{T<:AbstractString,U<:Array}(str::T, splitter, limit::Integer, ke
         end
         if k <= j; k = nextind(str,j) end
         r = search(str,splitter,k)
+        # FIXME: keep first(r) and last(r)?
         j, k = first(r), nextind(str,last(r))
     end
     if keep_empty || !done(str,i)
@@ -1340,19 +1679,19 @@ function _rsplit{T<:AbstractString,U<:Array}(str::T, splitter, limit::Integer, k
     i = start(str)
     n = endof(str)
     r = rsearch(str,splitter)
-    j = first(r)-1
+    j = first(r) - 1codeunit
     k = last(r)
-    while((0 <= j < n) && (length(strs) != limit-1))
+    while((StringIndex(0) <= j < n) && (length(strs) != limit-1))
         if i <= k
-            (keep_empty || (k < n)) && unshift!(strs, SubString(str,k+1,n))
+            (keep_empty || (k < n)) && unshift!(strs, SubString(str, k + 1codeunit, n))
             n = j
         end
         (k <= j) && (j = prevind(str,j))
         r = rsearch(str,splitter,j)
-        j = first(r)-1
+        j = first(r) - 1codeunit
         k = last(r)
     end
-    (keep_empty || (n > 0)) && unshift!(strs, SubString(str,1,n))
+    (keep_empty || (n >= start(str))) && unshift!(strs, SubString(str, start(str), n))
     return strs
 end
 #rsplit(str::AbstractString) = rsplit(str, _default_delims, 0, false)
@@ -1364,7 +1703,7 @@ function replace(str::ByteString, pattern, repl::Function, limit::Integer)
     r = search(str,pattern,i)
     j, k = first(r), last(r)
     out = IOBuffer()
-    while j != 0
+    while j != StringIndex(0)
         if i == a || i <= k
             write(out, SubString(str,i,prevind(str,j)))
             write(out, string(repl(SubString(str,j,k))))
@@ -1386,6 +1725,7 @@ function replace(str::ByteString, pattern, repl::Function, limit::Integer)
     write(out, SubString(str,i))
     takebuf_string(out)
 end
+
 replace(s::AbstractString, pat, f::Function, n::Integer) = replace(bytestring(s), pat, f, n)
 replace(s::AbstractString, pat, r, n::Integer) = replace(s, pat, x->r, n)
 replace(s::AbstractString, pat, r) = replace(s, pat, r, 0)
@@ -1422,23 +1762,24 @@ print_joined(io, strings) = print_joined(io, strings, "")
 
 join(args...) = sprint(print_joined, args...)
 
-chop(s::AbstractString) = s[1:end-1]
+chop(s::AbstractString) = s[1:end-1codeunit]
 
 function chomp(s::AbstractString)
     i = endof(s)
-    if (i < 1 || s[i] != '\n') return s end
+    if (i < start(s) || s[i] != '\n') return s end
     j = prevind(s,i)
-    if (j < 1 || s[j] != '\r') return s[1:i-1] end
-    return s[1:j-1]
+    if (j < start(s) || s[j] != '\r') return s[1:i-1codeunit] end
+    return s[1:j-1codeunit]
 end
 chomp(s::ByteString) =
-    (endof(s) < 1 || s.data[end]   != 0x0a) ? s :
-    (endof(s) < 2 || s.data[end-1] != 0x0d) ? s[1:end-1] : s[1:end-2]
+    (endof(s).i < 1 || s.data[end]   != 0x0a) ? s :
+    (endof(s).i < 2 || s.data[end-1] != 0x0d) ? s[1:end-1codeunit] :
+                                                s[1:end-1codeunit]
 
 # NOTE: use with caution -- breaks the immutable string convention!
 function chomp!(s::ByteString)
     if !isempty(s) && s.data[end] == 0x0a
-        n = (endof(s) < 2 || s.data[end-1] != 0x0d) ? 1 : 2
+        n = (endof(s).i < 2 || s.data[end-1] != 0x0d) ? 1 : 2
         ccall(:jl_array_del_end, Void, (Any, UInt), s.data, n)
     end
     return s
@@ -1463,7 +1804,7 @@ function rstrip(s::AbstractString, chars::Chars=_default_delims)
     while !done(r,i)
         c, j = next(r,i)
         if !(c in chars)
-            return s[1:end-i+1]
+            return s[1:end - i.i * codeunit + 1codeunit]
         end
         i = j
     end
@@ -1487,6 +1828,14 @@ parseint{T<:Integer}(::Type{T}, c::Char, base::Integer) = convert(T,parseint(c,b
 parseint{T<:Integer}(::Type{T}, c::Char) = convert(T,parseint(c))
 
 function parseint_next(s::AbstractString, i::Int=start(s))
+    done(s,i) && throw(ArgumentError("premature end of integer: $(repr(s))"))
+    j = i
+    c, i = next(s,i)
+    c, i, j
+end
+
+# TODO: deprecate
+function parseint_next(s::AbstractString, i::StringIndex=start(s))
     done(s,i) && throw(ArgumentError("premature end of integer: $(repr(s))"))
     j = i
     c, i = next(s,i)
@@ -1691,12 +2040,12 @@ function hex2bytes(s::ASCIIString)
     i = j = 0
     while i < len
         n = 0
-        c = s[i+=1]
+        c = s[StringIndex(i+=1)]
         n = '0' <= c <= '9' ? c - '0' :
             'a' <= c <= 'f' ? c - 'a' + 10 :
             'A' <= c <= 'F' ? c - 'A' + 10 :
                 throw(ArgumentError("not a hexadecimal string: $(repr(s))"))
-        c = s[i+=1]
+        c = s[StringIndex(i+=1)]
         n = '0' <= c <= '9' ? n << 4 + c - '0' :
             'a' <= c <= 'f' ? n << 4 + c - 'a' + 10 :
             'A' <= c <= 'F' ? n << 4 + c - 'A' + 10 :
@@ -1724,9 +2073,9 @@ end
 
 # pointer conversions of ASCII/UTF8/UTF16/UTF32 strings:
 pointer(x::Union(ByteString,UTF16String,UTF32String)) = pointer(x.data)
-pointer{T<:ByteString}(x::SubString{T}) = pointer(x.string.data) + x.offset
+pointer{T<:ByteString}(x::SubString{T}) = pointer(x.string.data) + x.offset.i
 pointer(x::ByteString, i::Integer) = pointer(x.data)+(i-1)
-pointer{T<:ByteString}(x::SubString{T}, i::Integer) = pointer(x.string.data) + x.offset + (i-1)
+pointer{T<:ByteString}(x::SubString{T}, i::Integer) = pointer(x.string.data) + x.offset.i + (i-1)
 pointer(x::Union(UTF16String,UTF32String), i::Integer) = pointer(x)+(i-1)*sizeof(eltype(x.data))
 pointer{T<:Union(UTF16String,UTF32String)}(x::SubString{T}) = pointer(x.string.data) + x.offset*sizeof(eltype(x.data))
 pointer{T<:Union(UTF16String,UTF32String)}(x::SubString{T}, i::Integer) = pointer(x.string.data) + (x.offset + (i-1))*sizeof(eltype(x.data))

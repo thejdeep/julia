@@ -144,12 +144,12 @@ function parseipv4(str)
         if length(f) == 0
             throw(ArgumentError("empty field in IPv4 address"))
         end
-        if f[1] == '0'
-            if length(f) >= 2 && f[2] == 'x'
+        if f[start(f)] == '0'
+            if length(f) >= 2 && (j = nextind(f, start(f)); f[j] == 'x')
                 if length(f) > 8 # 2+(3*2) - prevent parseint from overflowing on 32bit
                     throw(ArgumentError("IPv4 field too large"))
                 end
-                r = parseint(f[3:end],16)
+                r = parseint(f[nextind(f, j):end],16)
             else
                 if length(f) > 9 # 1+8 - prevent parseint from overflowing on 32bit
                     throw(ArgumentError("IPv4 field too large"))

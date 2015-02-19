@@ -81,8 +81,8 @@ end
 immutable RegexMatch
     match::SubString{UTF8String}
     captures::Vector{Union(Void,SubString{UTF8String})}
-    offset::Int
-    offsets::Vector{Int}
+    offset::StringIndex
+    offsets::Vector{StringIndex}
 end
 
 function show(io::IO, m::RegexMatch)
@@ -101,13 +101,92 @@ function show(io::IO, m::RegexMatch)
     print(io, ")")
 end
 
-function ismatch(r::Regex, s::AbstractString, offset::Integer=0)
+# FIXME: idx was offset: OK to change?
+function ismatch(r::Regex, s::AbstractString, idx::StringIndex=start(s))
+    compile(r)
+    return PCRE.exec(r.regex, r.extra, bytestring(s), idx.i-1, r.options & PCRE.EXECUTE_MASK,
+                     r.ovec)
+end
+
+# FIXME: idx was offset: OK to change?
+function ismatch(r::Regex, s::SubString, idx::StringIndex=start(s))
+    compile(r)
+    return PCRE.exec(r.regex, r.extra, s, idx.i-1, r.options & PCRE.EXECUTE_MASK,
+                  r.ovec)
+end
+
+function match(re::Regex, str::UTF8String, idx::StringIndex, add_opts::Int32=int32(0))
+    opts = re.options & PCRE.EXECUTE_MASK | add_opts
+    compile(re)
+    if !PCRE.exec(re.regex, re.extra, str, idx.i-1, opts, re.ovec)
+        return nothing
+    end
+    n = length(re.ovec)/3 - 1
+    mat = SubString(str, StringIndex(re.ovec[1]+1), StringIndex(re.ovec[2]))
+    cap = Union(Void,SubString{UTF8String})[
+            re.ovec[2i+1] < 0 ? nothing : SubString(str, StringIndex(re.ovec[2i+1]+1), StringIndex(re.ovec[2i+2])) for i=1:n ]
+    off = [StringIndex(re.ovec[2i+1]::Int32+1) for i=1:n ]
+    RegexMatch(mat, cap, StringIndex(re.ovec[1]+1), off)
+end
+
+match(re::Regex, str::Union(ByteString,SubString), idx::StringIndex, add_opts::Int32=int32(0)) =
+    match(re, utf8(str), idx, add_opts)
+
+match(r::Regex, s::AbstractString) = match(r, s, start(s))
+match(r::Regex, s::AbstractString, i::StringIndex) =
+    error("regex matching is only available for bytestrings; use bytestring(s) to convert")
+
+function matchall(re::Regex, str::UTF8String, overlap::Bool=false)
+    regex = compile(re).regex
+    extra = re.extra
+    n = length(str.data)
+    matches = SubString{UTF8String}[]
+    offset = int32(0)
+    opts = re.options & PCRE.EXECUTE_MASK
+    opts_nonempty = opts | PCRE.ANCHORED | PCRE.NOTEMPTY_ATSTART
+    prevempty = false
+    ovec = Array(Int32, 3)
+    while true
+        result = ccall((:pcre_exec, :libpcre), Int32,
+                       (Ptr{Void}, Ptr{Void}, Ptr{UInt8}, Int32,
+                       Int32, Int32, Ptr{Int32}, Int32),
+                       regex, extra, str, n,
+                       offset, prevempty ? opts_nonempty : opts, ovec, 3)
+
+        if result < 0
+            if prevempty && offset < n
+                offset = int32(nextind(str, StringIndex(offset + 1)).i - 1)
+                prevempty = false
+                continue
+            else
+                break
+            end
+        end
+
+        push!(matches, SubString(str, StringIndex(ovec[1]+1), StringIndex(ovec[2])))
+        prevempty = offset == ovec[2]
+        if overlap
+            if !prevempty
+                offset = int32(ovec[1]+1)
+            end
+        else
+            offset = ovec[2]
+        end
+    end
+    matches
+end
+
+matchall(re::Regex, str::Union(ByteString,SubString), overlap::Bool=false) =
+    matchall(re, utf8(str), overlap)
+
+# TODO: deprecate
+function ismatch(r::Regex, s::AbstractString, offset::Integer)
     compile(r)
     return PCRE.exec(r.regex, r.extra, bytestring(s), offset, r.options & PCRE.EXECUTE_MASK,
                      r.ovec)
 end
 
-function ismatch(r::Regex, s::SubString, offset::Integer=0)
+function ismatch(r::Regex, s::SubString, offset::Integer)
     compile(r)
     return PCRE.exec(r.regex, r.extra, s, offset, r.options & PCRE.EXECUTE_MASK,
                   r.ovec)
@@ -122,7 +201,7 @@ function match(re::Regex, str::UTF8String, idx::Integer, add_opts::Int32=int32(0
     n = length(re.ovec)/3 - 1
     mat = SubString(str, re.ovec[1]+1, re.ovec[2])
     cap = Union(Void,SubString{UTF8String})[
-            re.ovec[2i+1] < 0 ? nothing : SubString(str, re.ovec[2i+1]+1, re.ovec[2i+2]) for i=1:n ]
+            re.ovec[2i+1] < 0 ? nothing : SubString(str, StringIndex(re.ovec[2i+1]+1), StringIndex(re.ovec[2i+2])) for i=1:n ]
     off = Int[ re.ovec[2i+1]::Int32+1 for i=1:n ]
     RegexMatch(mat, cap, re.ovec[1]+1, off)
 end
@@ -130,7 +209,6 @@ end
 match(re::Regex, str::Union(ByteString,SubString), idx::Integer, add_opts::Int32=int32(0)) =
     match(re, utf8(str), idx, add_opts)
 
-match(r::Regex, s::AbstractString) = match(r, s, start(s))
 match(r::Regex, s::AbstractString, i::Integer) =
     error("regex matching is only available for bytestrings; use bytestring(s) to convert")
 
@@ -153,7 +231,7 @@ function matchall(re::Regex, str::UTF8String, overlap::Bool=false)
 
         if result < 0
             if prevempty && offset < n
-                offset = int32(nextind(str, offset + 1) - 1)
+                offset = int32(nextind(str, StringIndex(offset + 1)) - 1)
                 prevempty = false
                 continue
             else
@@ -174,9 +252,24 @@ function matchall(re::Regex, str::UTF8String, overlap::Bool=false)
     matches
 end
 
-matchall(re::Regex, str::Union(ByteString,SubString), overlap::Bool=false) =
-    matchall(re, utf8(str), overlap)
 
+function search(str::Union(ByteString,SubString), re::Regex, idx::StringIndex)
+    if idx > nextind(str,endof(str))
+        throw(BoundsError())
+    end
+    opts = re.options & PCRE.EXECUTE_MASK
+    compile(re)
+    if PCRE.exec(re.regex, re.extra, str, idx.i-1, opts, re.ovec)
+        return StringIndex(re.ovec[1]+1):prevind(str, StringIndex(re.ovec[2]+1))
+    else
+        return StringIndex(0):StringIndex(-1)
+    end
+end
+search(s::AbstractString, r::Regex, idx::StringIndex) =
+    error("regex search is only available for bytestrings; use bytestring(s) to convert")
+search(s::AbstractString, r::Regex) = search(s,r,start(s))
+
+# TODO: deprecate
 function search(str::Union(ByteString,SubString), re::Regex, idx::Integer)
     if idx > nextind(str,endof(str))
         throw(BoundsError())
@@ -188,7 +281,6 @@ function search(str::Union(ByteString,SubString), re::Regex, idx::Integer)
 end
 search(s::AbstractString, r::Regex, idx::Integer) =
     error("regex search is only available for bytestrings; use bytestring(s) to convert")
-search(s::AbstractString, r::Regex) = search(s,r,start(s))
 
 immutable RegexMatchIterator
     regex::Regex
@@ -215,7 +307,7 @@ function next(itr::RegexMatchIterator, prev_match)
             offset = prev_match.offset
         end
     else
-        offset = prev_match.offset + endof(prev_match.match)
+        offset = prev_match.offset + endof(prev_match.match).i * codeunit
     end
 
     opts_nonempty = int32(PCRE.ANCHORED | PCRE.NOTEMPTY_ATSTART)
@@ -224,7 +316,7 @@ function next(itr::RegexMatchIterator, prev_match)
                     prevempty ? opts_nonempty : int32(0))
 
         if mat === nothing
-            if prevempty && offset <= length(itr.string.data)
+            if prevempty && offset <= endof(itr.string)
                 offset = nextind(itr.string, offset)
                 prevempty = false
                 continue
