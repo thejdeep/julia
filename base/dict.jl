@@ -322,8 +322,9 @@ copy(o::ObjectIdDict) = ObjectIdDict(o)
 
 type Serializer
     io::IO
+    counter::Int
     table::ObjectIdDict
-    Serializer(io::IO) = new(io)
+    Serializer(io::IO) = new(io, 0)
 end
 
 # dict
@@ -410,8 +411,9 @@ end
 convert{K,V}(::Type{Dict{K,V}},d::Dict{K,V}) = d
 
 function serialize(s::Serializer, t::Dict)
+    serialize_cycle(s, t) && return
     serialize_type(s, typeof(t))
-    write(s, int32(length(t)))
+    write(s.io, int32(length(t)))
     for (k,v) in t
         serialize(s, k)
         serialize(s, v)
@@ -419,8 +421,9 @@ function serialize(s::Serializer, t::Dict)
 end
 
 function deserialize{K,V}(s, T::Type{Dict{K,V}})
-    n = read(s, Int32)
+    n = read(s.io, Int32)
     t = T(); sizehint!(t, n)
+    deserialize_cycle(s, t)
     for i = 1:n
         k = deserialize(s)
         v = deserialize(s)

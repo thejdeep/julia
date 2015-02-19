@@ -636,7 +636,7 @@ bytestring{T <: ByteString}(p::SubString{T}) = bytestring(pointer(p.string.data)
 
 function serialize{T}(s::Serializer, ss::SubString{T})
     # avoid saving a copy of the parent string, keeping the type of ss
-    invoke(serialize, (Any,Any), s, convert(SubString{T}, convert(T,ss)))
+    invoke(serialize, (Serializer,Any), s, convert(SubString{T}, convert(T,ss)))
 end
 
 function getindex(s::AbstractString, r::UnitRange{Int})
