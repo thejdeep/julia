@@ -199,8 +199,8 @@ function serialize(s::Serializer, S::SharedArray)
     end
 end
 
-function deserialize{T,N}(s, t::Type{SharedArray{T,N}})
-    S = invoke(deserialize, (Any, DataType), s, t)
+function deserialize{T,N}(s::Serializer, t::Type{SharedArray{T,N}})
+    S = invoke(deserialize, (Serializer, DataType), s, t)
     init_loc_flds(S)
     S
 end

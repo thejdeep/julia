@@ -204,7 +204,7 @@ function serialize(s::Serializer, n::BigFloat)
     serialize(s, string(n))
 end
 
-deserialize(s, ::Type{BigFloat}) = BigFloat(deserialize(s))
+deserialize(s::Serializer, ::Type{BigFloat}) = BigFloat(deserialize(s))
 
 # Basic arithmetic without promotion
 for (fJ, fC) in ((:+,:add), (:*,:mul))

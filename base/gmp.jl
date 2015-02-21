@@ -217,7 +217,7 @@ function serialize(s::Serializer, n::BigInt)
     serialize(s, base(62,n))
 end
 
-deserialize(s, ::Type{BigInt}) = Base.parseint_nocheck(BigInt, deserialize(s), 62)
+deserialize(s::Serializer, ::Type{BigInt}) = Base.parseint_nocheck(BigInt, deserialize(s), 62)
 
 # Binary ops
 for (fJ, fC) in ((:+, :add), (:-,:sub), (:*, :mul),

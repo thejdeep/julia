@@ -259,7 +259,7 @@ function serialize(s::Serializer, r::Regex)
     serialize(s, r.options)
 end
 
-function deserialize(s, t::Type{Regex})
+function deserialize(s::Serializer, t::Type{Regex})
     pattern = deserialize(s)
     options = deserialize(s)
     Regex(pattern, options)

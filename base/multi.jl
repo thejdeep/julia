@@ -532,8 +532,8 @@ function serialize(s::Serializer, rr::RemoteRef)
     invoke(serialize, (Serializer, Any), s, rr)
 end
 
-function deserialize(s, t::Type{RemoteRef})
-    rr = invoke(deserialize, (Any, DataType), s, t)
+function deserialize(s::Serializer, t::Type{RemoteRef})
+    rr = invoke(deserialize, (Serializer, DataType), s, t)
     where = rr.where
     if where == myid()
         add_client(rr2id(rr), myid())
