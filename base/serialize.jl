@@ -134,8 +134,8 @@ function serialize_array_data(s::IO, a)
 end
 
 function serialize(s::Serializer, a::Array)
-    serialize_cycle(s, a) && return
     elty = eltype(a)
+    !isbits(elty) && serialize_cycle(s, a) && return
     writetag(s.io, Array)
     if elty !== UInt8
         serialize(s, elty)
@@ -159,7 +159,6 @@ function serialize(s::Serializer, a::Array)
 end
 
 function serialize{T,N,A<:Array}(s::Serializer, a::SubArray{T,N,A})
-    serialize_cycle(s, a) && return
     if !isbits(T) || stride(a,1)!=1
         return serialize(s, copy(a))
     end
@@ -493,7 +492,6 @@ function deserialize(s::Serializer, ::Type{Array})
     if isa(d1,Integer)
         if elty !== Bool && isbits(elty)
             A = Array(elty, d1)
-            deserialize_cycle(s, A)
             return read!(s.io, A)
         end
         dims = (int(d1),)
@@ -517,7 +515,6 @@ function deserialize(s::Serializer, ::Type{Array})
         else
             A = read(s.io, elty, dims)
         end
-        deserialize_cycle(s, A)
         return A
     end
     A = Array(elty, dims)
