@@ -183,10 +183,17 @@ using .IteratorsMD
 
 stagedfunction checksize(A::AbstractArray, I...)
     N = length(I)
-    quote
-        @nexprs $N d->(size(A, d) == length(I[d]) || throw(DimensionMismatch("index $d has length $(length(I[d])), but size(A, $d) = $(size(A,d))")))
-        nothing
+    ex = Expr(:block)
+    for d=1:N
+        I[d] <: Colon && continue
+        if I[d] <: Real
+            push!(ex.args, :(size(A, $d) == 1 || throw(DimensionMismatch("index ", $d, " is a scalar but size(A, ", $d, ") = ", size(A,$d)))))
+        else
+            push!(ex.args, :(size(A, $d) == length(I[$d]) || throw(DimensionMismatch("index ", $d, " has length ", length(I[$d]), ", but size(A, ", $d, ") = ", size(A,$d)))))
+        end
     end
+    push!(ex.args, :(nothing))
+    ex
 end
 
 @inline unsafe_getindex(v::BitArray, ind::Int) = Base.unsafe_bitgetindex(v.chunks, ind)
@@ -197,7 +204,7 @@ end
 @inline unsafe_setindex!{T}(v::AbstractArray{T}, x::T, ind::Real) = unsafe_setindex!(v, x, to_index(ind))
 
 # Version that uses cartesian indexing for src
-stagedfunction _getindex!(dest::Array, src::AbstractArray, I::Union(Int,AbstractVector)...)
+stagedfunction _getindex!(dest::Array, src::AbstractArray, I::Union(Int,AbstractVector,Colon)...)
     N = length(I)
     Isplat = Expr[:(I[$d]) for d = 1:N]
     quote
@@ -212,7 +219,7 @@ stagedfunction _getindex!(dest::Array, src::AbstractArray, I::Union(Int,Abstract
 end
 
 # Version that uses linear indexing for src
-stagedfunction _getindex!(dest::Array, src::Array, I::Union(Int,AbstractVector)...)
+stagedfunction _getindex!(dest::Array, src::Array, I::Union(Int,AbstractVector,Colon)...)
     N = length(I)
     Isplat = Expr[:(I[$d]) for d = 1:N]
     quote
@@ -231,8 +238,8 @@ end
 
 # It's most efficient to call checkbounds first, then to_index, and finally
 # allocate the output. Hence the different variants.
-_getindex(A, I::(Union(Int,AbstractVector)...)) =
-    _getindex!(similar(A, index_shape(I...)), A, I...)
+_getindex(A, I::(Union(Int,AbstractVector,Colon)...)) =
+    _getindex!(similar(A, index_shape(A, I...)), A, I...)
 
 # The stagedfunction here is just to work around the performance hit
 # of splatting
@@ -548,7 +555,7 @@ stagedfunction unsafe_getindex(B::BitArray, I0::UnitRange{Int}, I::Union(Int,Uni
     Isplat = Expr[:(I[$d]) for d = 1:N]
     quote
         @nexprs $N d->(I_d = I[d])
-        X = BitArray(index_shape(I0, $(Isplat...)))
+        X = BitArray(index_shape(B, I0, $(Isplat...)))
 
         f0 = first(I0)
         l0 = length(I0)
@@ -583,7 +590,7 @@ stagedfunction unsafe_getindex(B::BitArray, I::Union(Int,AbstractVector{Int})...
     Isplat = Expr[:(I[$d]) for d = 1:N]
     quote
         @nexprs $N d->(I_d = I[d])
-        X = BitArray(index_shape($(Isplat...)))
+        X = BitArray(index_shape(B, $(Isplat...)))
         Xc = X.chunks
 
         stride_1 = 1

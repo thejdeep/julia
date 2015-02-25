@@ -225,9 +225,27 @@ function promote_shape(a::Dims, b::Dims)
 end
 
 # shape of array to create for getindex() with indexes I
-# drop dimensions indexed with trailing scalars
-index_shape(I::Real...) = ()
-index_shape(i, I...) = tuple(length(i), index_shape(I...)...)
+# drop dimensions indexed with trailing scalars, lower : to the appropriate size
+stagedfunction index_shape(A::AbstractArray, I...)
+    N = length(I)
+    ex = Expr(:tuple)
+    dims = N
+    # Strip trailing scalar dimensions
+    while dims > 0 && I[dims] <: Real
+        dims -= 1
+    end
+    for d=1:dims
+        if I[d] <: Colon
+            push!(ex.args, d < N  ? (:(size(A, $d))) :
+                           d == 1 ? (:(length(A)))   : (:(trailingsize(A, $d))))
+        elseif I[d] <: Real
+            push!(ex.args, 1)
+        else
+            push!(ex.args, :(length(I[$d])))
+        end
+    end
+    ex
+end
 
 function throw_setindex_mismatch(X, I)
     if length(I) == 1
@@ -308,6 +326,7 @@ to_index(I::UnitRange{Bool}) = find(I)
 to_index(I::Range{Bool}) = find(I)
 to_index{T<:Real}(r::UnitRange{T}) = to_index(first(r)):to_index(last(r))
 to_index{T<:Real}(r::StepRange{T}) = to_index(first(r)):to_index(step(r)):to_index(last(r))
+to_index(c::Colon) = c
 to_index(I::AbstractArray{Bool}) = find(I)
 to_index(A::AbstractArray{Int}) = A
 to_index{T<:Real}(A::AbstractArray{T}) = [to_index(x) for x in A]
