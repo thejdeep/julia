@@ -184,13 +184,9 @@ using .IteratorsMD
 stagedfunction checksize(A::AbstractArray, I...)
     N = length(I)
     ex = Expr(:block)
+    push!(ex.args, :(idxlens = index_lengths(A, I...)))
     for d=1:N
-        I[d] <: Colon && continue
-        if I[d] <: Real
-            push!(ex.args, :(size(A, $d) == 1 || throw(DimensionMismatch("index ", $d, " is a scalar but size(A, ", $d, ") = ", size(A,$d)))))
-        else
-            push!(ex.args, :(size(A, $d) == length(I[$d]) || throw(DimensionMismatch("index ", $d, " has length ", length(I[$d]), ", but size(A, ", $d, ") = ", size(A,$d)))))
-        end
+        push!(ex.args, :(size(A, $d) == idxlens[$d] || throw(DimensionMismatch("index ", $d, " has length ", idxlens[$d], ", but size(A, ", $d, ") = ", size(A,$d)))))
     end
     push!(ex.args, :(nothing))
     ex
@@ -269,16 +265,18 @@ stagedfunction setindex!(A::Array, x, J::Union(Real,AbstractArray,Colon)...)
     if x<:AbstractArray
         ex=quote
             X = x
-            @ncall $N setindex_shape_check X I
+            idxlens = @ncall $N index_lengths A I
+            setindex_shape_check(X, idxlens...)
             Xs = start(X)
-            @nloops $N i d->(1:length(I_d)) d->(@inbounds offset_{d-1} = offset_d + (unsafe_getindex(I_d, i_d)-1)*stride_d) begin
+            @nloops $N i d->(1:idxlens[d]) d->(@inbounds offset_{d-1} = offset_d + (unsafe_getindex(I_d, i_d)-1)*stride_d) begin
                 v, Xs = next(X, Xs)
                 @inbounds A[offset_0] = v
             end
         end
     else
         ex=quote
-            @nloops $N i d->(1:length(I_d)) d->(@inbounds offset_{d-1} = offset_d + (unsafe_getindex(I_d, i_d)-1)*stride_d) begin
+            idxlens = @ncall $N index_lengths A I
+            @nloops $N i d->(1:idxlens[d]) d->(@inbounds offset_{d-1} = offset_d + (unsafe_getindex(I_d, i_d)-1)*stride_d) begin
                 @inbounds A[offset_0] = x
             end
         end
@@ -325,7 +323,8 @@ function gen_setindex_body(N::Int)
             end
         else
             X = x
-            Base.Cartesian.@ncall $N Base.setindex_shape_check X I
+            idxlens = @ncall $N index_lengths V I
+            setindex_shape_check(X, idxlens...)
             k = 1
             Base.Cartesian.@nloops $N i d->(1:length(I_d)) d->(@inbounds j_d = Base.unsafe_getindex(I_d, i_d)) begin
                 @inbounds (Base.Cartesian.@nref $N V j) = X[k]
@@ -786,16 +785,17 @@ end
 function setindex!(B::BitArray, X::AbstractArray, i::Real)
     checkbounds(B, i)
     j = to_index(i)
-    setindex_shape_check(X, j)
+    setindex_shape_check(X, index_lengths(A, j)[1])
     return unsafe_setindex!(B, X, j)
 end
 
-stagedfunction setindex!(B::BitArray, X::AbstractArray, I::Union(Real,AbstractArray)...)
+stagedfunction setindex!(B::BitArray, X::AbstractArray, I::Union(Real,AbstractArray,Colon)...)
     N = length(I)
     quote
         checkbounds(B, I...)
         @nexprs $N d->(J_d = to_index(I[d]))
-        @ncall $N setindex_shape_check X J
+        idxlens = @ncall $N index_lengths B J
+        setindex_shape_check(X, idxlens...)
         return @ncall $N unsafe_setindex! B X J
     end
 end

@@ -395,7 +395,7 @@ function setindex!{T<:Real}(A::Array, X::AbstractArray, I::AbstractVector{T})
     return A
 end
 
-setindex!(A::Array, x, I::Colon) = setindex!(A, x, 1:length(x))
+setindex!(A::Array, x, I::Colon) = setindex!(A, x, 1:length(A))
 
 # logical indexing
 # (when the indexing is provided as an Array{Bool} or a BitArray we can be

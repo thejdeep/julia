@@ -224,17 +224,11 @@ function promote_shape(a::Dims, b::Dims)
     return a
 end
 
-# shape of array to create for getindex() with indexes I
-# drop dimensions indexed with trailing scalars, lower : to the appropriate size
-stagedfunction index_shape(A::AbstractArray, I...)
+# The lengths of the given indices, lowering : to the appropriate size
+stagedfunction index_lengths(A::AbstractArray, I...)
     N = length(I)
     ex = Expr(:tuple)
-    dims = N
-    # Strip trailing scalar dimensions
-    while dims > 0 && I[dims] <: Real
-        dims -= 1
-    end
-    for d=1:dims
+    for d=1:N
         if I[d] <: Colon
             push!(ex.args, d < N  ? (:(size(A, $d))) :
                            d == 1 ? (:(length(A)))   : (:(trailingsize(A, $d))))
@@ -247,11 +241,27 @@ stagedfunction index_shape(A::AbstractArray, I...)
     ex
 end
 
+# shape of array to create for getindex() with indexes I
+# drop dimensions indexed with trailing scalars
+stagedfunction index_shape(A::AbstractArray, I...)
+    N = length(I)
+    dims = N
+    while dims > 0 && I[dims] <: Real
+        dims -= 1
+    end
+    Isplat = Expr[:(I[$d]) for d=1:N]
+    quote
+        lens = index_lengths(A, $(Isplat...))
+        @nexprs $dims d->(l_d = lens[d])
+        @ntuple $dims l
+    end
+end
+
 function throw_setindex_mismatch(X, I)
     if length(I) == 1
-        throw(DimensionMismatch("tried to assign $(length(X)) elements to $(length(I[1])) destinations"))
+        throw(DimensionMismatch("tried to assign $(length(X)) elements to $(I[1]) destinations"))
     else
-        throw(DimensionMismatch("tried to assign $(dims2string(size(X))) array to $(dims2string(map(length,I))) destination"))
+        throw(DimensionMismatch("tried to assign $(dims2string(size(X))) array to $(dims2string(I)) destination"))
     end
 end
 
@@ -266,7 +276,7 @@ function setindex_shape_check(X::AbstractArray, I...)
     i = j = 1
     while true
         ii = size(X,i)
-        jj = length(I[j])::Int
+        jj = I[j]
         if i == li || j == lj
             while i < li
                 i += 1
@@ -274,7 +284,7 @@ function setindex_shape_check(X::AbstractArray, I...)
             end
             while j < lj
                 j += 1
-                jj *= length(I[j])::Int
+                jj *= I[j]
             end
             if ii != jj
                 throw_setindex_mismatch(X, I)
@@ -298,21 +308,20 @@ setindex_shape_check(X::AbstractArray) =
     (length(X)==1 || throw_setindex_mismatch(X,()))
 
 setindex_shape_check(X::AbstractArray, i) =
-    (length(X)==length(i) || throw_setindex_mismatch(X, (i,)))
+    (length(X)==i || throw_setindex_mismatch(X, (i,)))
 
 setindex_shape_check{T}(X::AbstractArray{T,1}, i) =
-    (length(X)==length(i) || throw_setindex_mismatch(X, (i,)))
+    (length(X)==i || throw_setindex_mismatch(X, (i,)))
 
 setindex_shape_check{T}(X::AbstractArray{T,1}, i, j) =
-    (length(X)==length(i)*length(j) || throw_setindex_mismatch(X, (i,j)))
+    (length(X)==i*j || throw_setindex_mismatch(X, (i,j)))
 
 function setindex_shape_check{T}(X::AbstractArray{T,2}, i, j)
-    li, lj = length(i), length(j)
-    if length(X) != li*lj
+    if length(X) != i*j
         throw_setindex_mismatch(X, (i,j))
     end
     sx1 = size(X,1)
-    if !(li == 1 || li == sx1 || sx1 == 1)
+    if !(i == 1 || i == sx1 || sx1 == 1)
         throw_setindex_mismatch(X, (i,j))
     end
 end
