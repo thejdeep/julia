@@ -581,7 +581,7 @@ for Ti in IndexTypes
         end
 
         # Autodetects the types
-        function read_sparse(file::CFILE, ::Type{$Ti})
+        function read_sparse(file::Libc.FILE, ::Type{$Ti})
             s = Sparse(ccall((@cholmod_name("read_sparse", $Ti), :libcholmod), Ptr{C_SparseVoid},
                 (Ptr{Void}, Ptr{UInt8}),
                     file.ptr, common($Ti)))
@@ -711,7 +711,7 @@ Sparse(A::Dense) = dense_to_sparse(A, Cint)
 Sparse(L::Factor) = factor_to_sparse!(copy(L))
 function Sparse(filename::ASCIIString)
     f = open(filename)
-    A = read_sparse(CFILE(f), SuiteSparse_long)
+    A = read_sparse(Libc.FILE(f), SuiteSparse_long)
     close(f)
     A
 end

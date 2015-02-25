@@ -91,7 +91,7 @@ function tempname()
     p = ccall(:tempnam, Ptr{UInt8}, (Ptr{UInt8},Ptr{UInt8}), d, "julia")
     systemerror(:tempnam, p == C_NULL)
     s = bytestring(p)
-    c_free(p)
+    Libc.free(p)
     return s
 end
 

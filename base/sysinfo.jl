@@ -11,11 +11,7 @@ export  CPU_CORES,
         uptime,
         loadavg,
         free_memory,
-        total_memory,
-        dlext,
-        shlib_ext,
-        dllist,
-        dlpath
+        total_memory
 
 import ..Base: WORD_SIZE, OS_NAME, ARCH, MACHINE
 import ..Base: show, uv_error
@@ -138,87 +134,6 @@ end
 
 free_memory() = ccall(:uv_get_free_memory, UInt64, ())
 total_memory() = ccall(:uv_get_total_memory, UInt64, ())
-
-if OS_NAME === :Darwin
-    const dlext = "dylib"
-elseif OS_NAME === :Windows
-    const dlext = "dll"
-else
-    #assume OS_NAME === :Linux, or similar
-    const dlext = "so"
-end
-
-# This is deprecated!  use dlext instead!
-const shlib_ext = dlext
-
-@linux_only begin
-    immutable dl_phdr_info
-        # Base address of object
-        addr::Cuint
-
-        # Null-terminated name of object
-        name::Ptr{UInt8}
-
-        # Pointer to array of ELF program headers for this object
-        phdr::Ptr{Void}
-
-        # Number of program headers for this object
-        phnum::Cshort
-    end
-
-    # This callback function called by dl_iterate_phdr() on Linux
-    function dl_phdr_info_callback( di_ptr::Ptr{dl_phdr_info}, size::Csize_t, dynamic_libraries_ptr::Ptr{Array{AbstractString,1}} )
-        di = unsafe_load(di_ptr)
-
-        # Skip over objects without a path (as they represent this own object)
-        name = bytestring(di.name)
-        if !isempty(name)
-            dynamic_libraries = unsafe_pointer_to_objref( dynamic_libraries_ptr )
-            push!(dynamic_libraries, name )
-        end
-        convert(Cint, 0)::Cint
-    end
-end #@linux_only
-
-function dllist()
-    dynamic_libraries = Array(AbstractString,0)
-
-    @linux_only begin
-        const callback = cfunction(dl_phdr_info_callback, Cint,
-                                   (Ptr{dl_phdr_info}, Csize_t, Ptr{Array{AbstractString,1}} ))
-        ccall(:dl_iterate_phdr, Cint, (Ptr{Void}, Ptr{Void}), callback, pointer_from_objref(dynamic_libraries))
-    end
-
-    @osx_only begin
-        numImages = ccall(:_dyld_image_count, Cint, (), )
-
-        # start at 1 instead of 0 to skip self
-        for i in 1:numImages-1
-            name = bytestring(ccall(:_dyld_get_image_name, Ptr{UInt8}, (UInt32,), uint32(i)))
-            push!(dynamic_libraries, name)
-        end
-    end
-
-    @windows_only begin
-        ccall(:jl_dllist, Cint, (Any,), dynamic_libraries)
-    end
-
-    dynamic_libraries
-end
-
-function dlpath( handle::Ptr{Void} )
-    p = ccall( :jl_pathname_for_handle, Ptr{UInt8}, (Ptr{Void},), handle )
-    s = bytestring(p)
-    @windows_only c_free(p)
-    return s
-end
-
-function dlpath{T<:Union(AbstractString, Symbol)}(libname::T)
-    handle = dlopen(libname)
-    path = dlpath(handle)
-    dlclose(handle)
-    return path
-end
 
 function get_process_title()
     buf = zeros(Uint8, 512)

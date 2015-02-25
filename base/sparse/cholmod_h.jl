@@ -77,7 +77,7 @@ macro isok(A)
 end
 
 const version_array = Array(Cint, 3)
-if dlsym(dlopen("libcholmod"), :cholmod_version) != C_NULL
+if Libdl.dlsym(Libdl.dlopen("libcholmod"), :cholmod_version) != C_NULL
     ccall((:cholmod_version, :libcholmod), Cint, (Ptr{Cint},), version_array)
 else
     ccall((:jl_cholmod_version, :libsuitesparse_wrapper), Cint, (Ptr{Cint},), version_array)
