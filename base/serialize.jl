@@ -65,15 +65,16 @@ end
 
 # cycle handling
 function serialize_cycle(s::Serializer, x)
-    isimmutable(x) && return false
-    offs = get(s.table, x, -1)
-    if offs != -1
-        writetag(s.io, BackrefTag)
-        write(s.io, int(offs))
-        return true
+    if !isimmutable(x) && !typeof(x).pointerfree
+        offs = get(s.table, x, -1)
+        if offs != -1
+            writetag(s.io, BackrefTag)
+            write(s.io, int(offs))
+            return true
+        end
+        s.table[x] = s.counter
+        s.counter += 1
     end
-    s.table[x] = s.counter
-    s.counter += 1
     return false
 end
 
@@ -360,11 +361,11 @@ end
 deserialize(s::IO) = deserialize(Serializer(s))
 
 function deserialize(s::Serializer)
-    handle_deserialize(s, int32(read(s.io, UInt8)))
+    handle_deserialize(s, int32(read(s.io, UInt8))::Int32)
 end
 
 function deserialize_cycle(s::Serializer, x)
-    if !isimmutable(x)
+    if !isimmutable(x) && !typeof(x).pointerfree
         s.table[s.counter] = x
         s.counter += 1
     end
@@ -374,7 +375,7 @@ end
 # deserialize_ is an internal function to dispatch on the tag
 # describing the serialized representation. the number of
 # representations is fixed, so deserialize_ does not get extended.
-function handle_deserialize(s::Serializer, b)
+function handle_deserialize(s::Serializer, b::Int32)
     if b == 0
         return deser_tag[int32(read(s.io, UInt8))]
     end
@@ -382,14 +383,18 @@ function handle_deserialize(s::Serializer, b)
     if b >= VALUE_TAGS
         return tag
     elseif tag === Tuple
-        len = int32(read(s.io, UInt8))
+        len = int32(read(s.io, UInt8))::Int32
         return deserialize_tuple(s, len)
     elseif tag === LongTuple
-        len = read(s.io, Int32)
+        len = read(s.io, Int32)::Int32
         return deserialize_tuple(s, len)
     elseif tag === BackrefTag
-        id = read(s.io, Int)
+        id = read(s.io, Int)::Int
         return s.table[id]
+    elseif tag === Array
+        return deserialize_array(s)
+    elseif tag === DataType
+        return deserialize_datatype(s)
     end
     return deserialize(s, tag)
 end
@@ -426,7 +431,7 @@ end
 const known_lambda_data = Dict()
 
 function deserialize(s::Serializer, ::Type{Function})
-    b = read(s.io, UInt8)
+    b = read(s.io, UInt8)::UInt8
     if b==0
         name = deserialize(s)::Symbol
         if !isdefined(Base,name)
@@ -481,7 +486,7 @@ function deserialize(s::Serializer, ::Type{LambdaStaticData})
     return linfo
 end
 
-function deserialize(s::Serializer, ::Type{Array})
+function deserialize_array(s::Serializer)
     d1 = deserialize(s)
     if isa(d1,Type)
         elty = d1
@@ -504,7 +509,7 @@ function deserialize(s::Serializer, ::Type{Array})
             A = Array(Bool, dims)
             i = 1
             while i <= n
-                b = read(s.io, UInt8)
+                b = read(s.io, UInt8)::UInt8
                 v = bool(b>>7)
                 count = b&0x7f
                 nxt = i+count
@@ -520,7 +525,7 @@ function deserialize(s::Serializer, ::Type{Array})
     A = Array(elty, dims)
     deserialize_cycle(s, A)
     for i = 1:length(A)
-        tag = int32(read(s.io, UInt8))
+        tag = int32(read(s.io, UInt8))::Int32
         if tag==0 || !is(deser_tag[tag], UndefRefTag)
             A[i] = handle_deserialize(s, tag)
         end
@@ -528,8 +533,8 @@ function deserialize(s::Serializer, ::Type{Array})
     return A
 end
 
-deserialize(s::Serializer, ::Type{Expr})     = deserialize_expr(s, int32(read(s.io, UInt8)))
-deserialize(s::Serializer, ::Type{LongExpr}) = deserialize_expr(s, read(s.io, Int32))
+deserialize(s::Serializer, ::Type{Expr})     = deserialize_expr(s, int32(read(s.io, UInt8))::Int32)
+deserialize(s::Serializer, ::Type{LongExpr}) = deserialize_expr(s, read(s.io, Int32)::Int32)
 
 function deserialize_expr(s::Serializer, len)
     hd = deserialize(s)::Symbol
@@ -546,7 +551,7 @@ function deserialize(s::Serializer, ::Type{UnionType})
     Union(types...)
 end
 
-function deserialize(s::Serializer, ::Type{DataType})
+function deserialize_datatype(s::Serializer)
     form = read(s.io, UInt8)
     name = deserialize(s)::Symbol
     mod = deserialize(s)::Module
@@ -612,7 +617,7 @@ function deserialize(s::Serializer, t::DataType)
         x = ccall(:jl_new_struct_uninit, Any, (Any,), t)
         deserialize_cycle(s, x)
         for i in 1:length(t.names)
-            tag = int32(read(s.io, UInt8))
+            tag::Int32 = read(s.io, UInt8)
             if tag==0 || !is(deser_tag[tag], UndefRefTag)
                 ccall(:jl_set_nth_field, Void, (Any, Csize_t, Any), x, i-1, handle_deserialize(s, tag))
             end
