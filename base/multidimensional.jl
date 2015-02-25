@@ -312,21 +312,23 @@ end
 
 ### subarray.jl
 
+# This is the code-generation block for SubArray's staged setindex! function:
+# _setindex!(V::SubArray, x, J::Union(Real,AbstractVector,Colon)...)
 function gen_setindex_body(N::Int)
     quote
         Base.Cartesian.@nexprs $N d->(J_d = J[d])
         Base.Cartesian.@ncall $N checkbounds V J
         Base.Cartesian.@nexprs $N d->(I_d = Base.to_index(J_d))
+        idxlens = @ncall $N index_lengths V I
         if !isa(x, AbstractArray)
-            Base.Cartesian.@nloops $N i d->(1:length(I_d)) d->(@inbounds j_d = Base.unsafe_getindex(I_d, i_d)) begin
+            Base.Cartesian.@nloops $N i d->(1:idxlens[d]) d->(@inbounds j_d = Base.unsafe_getindex(I_d, i_d)) begin
                 @inbounds (Base.Cartesian.@nref $N V j) = x
             end
         else
             X = x
-            idxlens = @ncall $N index_lengths V I
             setindex_shape_check(X, idxlens...)
             k = 1
-            Base.Cartesian.@nloops $N i d->(1:length(I_d)) d->(@inbounds j_d = Base.unsafe_getindex(I_d, i_d)) begin
+            Base.Cartesian.@nloops $N i d->(1:idxlens[d]) d->(@inbounds j_d = Base.unsafe_getindex(I_d, i_d)) begin
                 @inbounds (Base.Cartesian.@nref $N V j) = X[k]
                 k += 1
             end

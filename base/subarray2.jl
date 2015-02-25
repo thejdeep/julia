@@ -97,9 +97,9 @@ function setindex!{T,N,P,IV}(V::SubArray{T,N,P,IV}, v, I::AbstractArray{Bool,N})
     size(I) == size(V) || throw(DimensionMismatch("size of Boolean mask must match array size"))
     _setindex!(V, v, find(I))  # this could be better optimized
 end
-setindex!{T,N,P,IV}(V::SubArray{T,N,P,IV}, v, I::Union(Real,AbstractVector)...) = setindex!(V, v, to_index(I)...)
-setindex!{T,N,P,IV}(V::SubArray{T,N,P,IV}, x, J::Union(Int,AbstractVector)...) = _setindex!(V, x, J...)
-stagedfunction _setindex!(V::SubArray, x, J::Union(Real,AbstractVector)...)
+setindex!{T,N,P,IV}(V::SubArray{T,N,P,IV}, v, I::Union(Real,AbstractVector,Colon)...) = setindex!(V, v, to_index(I)...)
+setindex!{T,N,P,IV}(V::SubArray{T,N,P,IV}, x, J::Union(Int,AbstractVector,Colon)...) = _setindex!(V, x, J...)
+stagedfunction _setindex!(V::SubArray, x, J::Union(Real,AbstractVector,Colon)...)
     gen_setindex_body(length(J))
 end
 
