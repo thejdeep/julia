@@ -637,10 +637,10 @@ static Function *to_function(jl_lambda_info_t *li, bool cstyle)
     // print out the function's LLVM code
     //jl_printf(JL_STDERR, "%s:%d\n",
     //           ((jl_sym_t*)li->file)->name, li->line);
-    //if (verifyFunction(*f,PrintMessageAction)) {
-    //    f->dump();
-    //    abort();
-    //}
+    if (verifyFunction(*f,PrintMessageAction)) {
+        f->dump();
+        abort();
+    }
     if (old != NULL) {
         builder.SetInsertPoint(old);
         builder.SetCurrentDebugLocation(olddl);
@@ -698,7 +698,7 @@ extern "C" void jl_generate_fptr(jl_function_t *f)
         #endif
 
         Function *llvmf = (Function*)li->functionObject;
-
+        llvmf->dump();
 #ifdef USE_MCJIT
         li->fptr = (jl_fptr_t)(intptr_t)jl_ExecutionEngine->getFunctionAddress(llvmf->getName());
 #else
