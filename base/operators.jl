@@ -225,37 +225,20 @@ function promote_shape(a::Dims, b::Dims)
 end
 
 # The lengths of the given indices, lowering : to the appropriate size
-stagedfunction index_lengths(A::AbstractArray, I...)
-    N = length(I)
-    ex = Expr(:tuple)
-    for d=1:N
-        if I[d] <: Colon
-            push!(ex.args, d < N  ? (:(size(A, $d))) :
-                           d == 1 ? (:(length(A)))   : (:(trailingsize(A, $d))))
-        elseif I[d] <: Real
-            push!(ex.args, 1)
-        else
-            push!(ex.args, :(length(I[$d])))
-        end
-    end
-    ex
-end
+index_lengths(A::AbstractArray, I...) = index_lengths_dim(A, 1, I...)
+index_lengths_dim(A, dim)                = ()
+index_lengths_dim(A, dim, ::Colon)       = dim == 1 ? (length(A),) : (trailingsize(A, dim),)
+index_lengths_dim(A, dim, ::Colon, I...) = tuple(size(A, dim), index_lengths_dim(A, dim+1, I...)...)
+index_lengths_dim(A, dim, ::Real, I...)  = tuple(1, index_lengths_dim(A, dim+1, I...)...)
+index_lengths_dim(A, dim, i, I...)       = tuple(length(i), index_lengths_dim(A, dim+1, I...)...)
 
 # shape of array to create for getindex() with indexes I
 # drop dimensions indexed with trailing scalars
-stagedfunction index_shape(A::AbstractArray, I...)
-    N = length(I)
-    dims = N
-    while dims > 0 && I[dims] <: Real
-        dims -= 1
-    end
-    Isplat = Expr[:(I[$d]) for d=1:N]
-    quote
-        lens = index_lengths(A, $(Isplat...))
-        @nexprs $dims d->(l_d = lens[d])
-        @ntuple $dims l
-    end
-end
+index_shape(A::AbstractArray, I...) = index_shape_dim(A, 1, I...)
+index_shape_dim(A, dim, I::Real...)    = ()
+index_shape_dim(A, dim, ::Colon)       = dim == 1 ? (length(A),) : (trailingsize(A, dim),)
+index_shape_dim(A, dim, ::Colon, I...) = tuple(size(A, dim), index_shape_dim(A, dim+1, I...)...)
+index_shape_dim(A, dim, i, I...)       = tuple(length(i), index_shape_dim(A, dim+1, I...)...)
 
 function throw_setindex_mismatch(X, I)
     if length(I) == 1
