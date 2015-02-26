@@ -67,8 +67,6 @@ immutable UnitRange{T<:Real} <: OrdinalRange{T,Int}
 end
 UnitRange{T<:Real}(start::T, stop::T) = UnitRange{T}(start, stop)
 
-colon() = Colon()
-
 colon(a::Real, b::Real) = colon(promote(a,b)...)
 
 colon{T<:Real}(start::T, stop::T) = UnitRange{T}(start, stop)

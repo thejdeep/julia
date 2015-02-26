@@ -332,7 +332,7 @@
 
 ; translate index x from colons to ranges
 (define (expand-index-colon x)
-  (cond ((eq? x ':) `(call colon))
+  (cond ((eq? x ':) `(call (top Colon)))
         ((and (pair? x)
               (eq? (car x) ':))
          (cond ((length= x 3)
