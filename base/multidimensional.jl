@@ -586,20 +586,21 @@ end
 
 # general multidimensional non-scalar indexing
 
-stagedfunction unsafe_getindex(B::BitArray, I::Union(Int,AbstractVector{Int})...)
+stagedfunction unsafe_getindex(B::BitArray, I::Union(Int,AbstractVector{Int},Colon)...)
     N = length(I)
     Isplat = Expr[:(I[$d]) for d = 1:N]
     quote
         @nexprs $N d->(I_d = I[d])
-        X = BitArray(index_shape(B, $(Isplat...)))
+        shape = @ncall $N index_shape B I
+        X = BitArray(shape)
         Xc = X.chunks
 
         stride_1 = 1
         @nexprs $N d->(stride_{d+1} = stride_d * size(B, d))
         @nexprs 1 d->(offset_{$N} = 1)
         ind = 1
-        @nloops($N, i, d->I_d,
-                d->(offset_{d-1} = offset_d + (i_d-1)*stride_d), # PRE
+        @nloops($N, i, X, d->(@inbounds j_d = unsafe_getindex(I[d], i_d);
+                              offset_{d-1} = offset_d + (j_d-1)*stride_d), # PRE
                 begin
                     unsafe_bitsetindex!(Xc, B[offset_0], ind)
                     ind += 1
@@ -610,7 +611,7 @@ end
 
 # general version with Real (or logical) indexing which dispatches on the appropriate method
 
-stagedfunction getindex(B::BitArray, I::Union(Real,AbstractVector)...)
+stagedfunction getindex(B::BitArray, I::Union(Real,AbstractVector,Colon)...)
     N = length(I)
     Isplat = Expr[:(I[$d]) for d = 1:N]
     Jsplat = Expr[:(to_index(I[$d])) for d = 1:N]
@@ -740,25 +741,27 @@ end
 
 # general multidimensional non-scalar indexing
 
-stagedfunction unsafe_setindex!(B::BitArray, X::AbstractArray, I::Union(Int,AbstractArray{Int})...)
+stagedfunction unsafe_setindex!(B::BitArray, X::AbstractArray, I::Union(Int,AbstractArray{Int},Colon)...)
     N = length(I)
     quote
         refind = 1
         @nexprs $N d->(I_d = I[d])
-        @nloops $N i d->I_d @inbounds begin
-            @ncall $N unsafe_setindex! B convert(Bool,X[refind]) i
+        idxlens = @ncall $N index_lengths B I
+        @nloops $N i d->(1:idxlens[d]) d->(J_d = I_d[i_d]) @inbounds begin
+            @ncall $N unsafe_setindex! B convert(Bool,X[refind]) J
             refind += 1
         end
         return B
     end
 end
 
-stagedfunction unsafe_setindex!(B::BitArray, x::Bool, I::Union(Int,AbstractArray{Int})...)
+stagedfunction unsafe_setindex!(B::BitArray, x::Bool, I::Union(Int,AbstractArray{Int},Colon)...)
     N = length(I)
     quote
         @nexprs $N d->(I_d = I[d])
-        @nloops $N i d->I_d begin
-            @ncall $N unsafe_setindex! B x i
+        idxlens = @ncall $N index_lengths B I
+        @nloops $N i d->(1:idxlens[d]) d->(J_d = I_d[i_d]) begin
+            @ncall $N unsafe_setindex! B x J
         end
         return B
     end
@@ -772,7 +775,7 @@ function setindex!(B::BitArray, x, i::Real)
     return unsafe_setindex!(B, convert(Bool,x), to_index(i))
 end
 
-stagedfunction setindex!(B::BitArray, x, I::Union(Real,AbstractArray)...)
+stagedfunction setindex!(B::BitArray, x, I::Union(Real,AbstractArray,Colon)...)
     N = length(I)
     quote
         checkbounds(B, I...)
