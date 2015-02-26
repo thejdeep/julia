@@ -320,12 +320,14 @@ copy(o::ObjectIdDict) = ObjectIdDict(o)
 
 # Serializer type needed as soon as ObjectIdDict is available
 
-type Serializer
-    io::IO
+type Serializer{I<:IO}
+    io::I
     counter::Int
     table::ObjectIdDict
-    Serializer(io::IO) = new(io, 0, ObjectIdDict())
+    Serializer(io::I) = new(io, 0, ObjectIdDict())
 end
+
+Serializer(io::IO) = Serializer{typeof(io)}(io)
 
 # dict
 

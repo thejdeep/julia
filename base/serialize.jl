@@ -361,7 +361,7 @@ end
 deserialize(s::IO) = deserialize(Serializer(s))
 
 function deserialize(s::Serializer)
-    handle_deserialize(s, int32(read(s.io, UInt8))::Int32)
+    handle_deserialize(s, int32(read(s.io, UInt8)::UInt8))
 end
 
 function deserialize_cycle(s::Serializer, x)
@@ -377,13 +377,13 @@ end
 # representations is fixed, so deserialize_ does not get extended.
 function handle_deserialize(s::Serializer, b::Int32)
     if b == 0
-        return deser_tag[int32(read(s.io, UInt8))]
+        return deser_tag[int32(read(s.io, UInt8)::UInt8)]
     end
     tag = deser_tag[b]
     if b >= VALUE_TAGS
         return tag
     elseif tag === Tuple
-        len = int32(read(s.io, UInt8))::Int32
+        len = int32(read(s.io, UInt8)::UInt8)
         return deserialize_tuple(s, len)
     elseif tag === LongTuple
         len = read(s.io, Int32)::Int32
@@ -401,8 +401,8 @@ end
 
 deserialize_tuple(s::Serializer, len) = ntuple(len, i->deserialize(s))
 
-deserialize(s::Serializer, ::Type{Symbol}) = symbol(read(s.io, UInt8, int32(read(s.io, UInt8))))
-deserialize(s::Serializer, ::Type{LongSymbol}) = symbol(read(s.io, UInt8, read(s.io, Int32)))
+deserialize(s::Serializer, ::Type{Symbol}) = symbol(read(s.io, UInt8, int32(read(s.io, UInt8)::UInt8)))
+deserialize(s::Serializer, ::Type{LongSymbol}) = symbol(read(s.io, UInt8, read(s.io, Int32)::Int32))
 
 function deserialize(s::Serializer, ::Type{Module})
     path = deserialize(s)
@@ -525,7 +525,7 @@ function deserialize_array(s::Serializer)
     A = Array(elty, dims)
     deserialize_cycle(s, A)
     for i = 1:length(A)
-        tag = int32(read(s.io, UInt8))::Int32
+        tag = int32(read(s.io, UInt8)::UInt8)
         if tag==0 || !is(deser_tag[tag], UndefRefTag)
             A[i] = handle_deserialize(s, tag)
         end
@@ -533,7 +533,7 @@ function deserialize_array(s::Serializer)
     return A
 end
 
-deserialize(s::Serializer, ::Type{Expr})     = deserialize_expr(s, int32(read(s.io, UInt8))::Int32)
+deserialize(s::Serializer, ::Type{Expr})     = deserialize_expr(s, int32(read(s.io, UInt8)::UInt8))
 deserialize(s::Serializer, ::Type{LongExpr}) = deserialize_expr(s, read(s.io, Int32)::Int32)
 
 function deserialize_expr(s::Serializer, len)
@@ -552,7 +552,7 @@ function deserialize(s::Serializer, ::Type{UnionType})
 end
 
 function deserialize_datatype(s::Serializer)
-    form = read(s.io, UInt8)
+    form = read(s.io, UInt8)::UInt8
     name = deserialize(s)::Symbol
     mod = deserialize(s)::Module
     ty = eval(mod,name)
@@ -617,7 +617,7 @@ function deserialize(s::Serializer, t::DataType)
         x = ccall(:jl_new_struct_uninit, Any, (Any,), t)
         deserialize_cycle(s, x)
         for i in 1:length(t.names)
-            tag::Int32 = read(s.io, UInt8)
+            tag = int32(read(s.io, UInt8)::UInt8)
             if tag==0 || !is(deser_tag[tag], UndefRefTag)
                 ccall(:jl_set_nth_field, Void, (Any, Csize_t, Any), x, i-1, handle_deserialize(s, tag))
             end
