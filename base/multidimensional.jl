@@ -387,6 +387,25 @@ stagedfunction merge_indexes(V, indexes::NTuple, dims::Dims, linindex::UnitRange
         index
     end
 end
+# Even simpler is the case where the linear index is ::Colon: return all indexes
+stagedfunction merge_indexes(V, indexes::NTuple, dims::Dims, ::Colon)
+    N = length(indexes)
+    N > 0 || throw(ArgumentError("cannot merge empty indexes"))
+    quote
+        Base.Cartesian.@nexprs $N d->(I_d = indexes[d])
+        dimoffset = ndims(V.parent) - length(dims)
+        n = prod(map(length, indexes))
+        Pstride_1 = 1   # parent strides
+        Base.Cartesian.@nexprs $(N-1) d->(Pstride_{d+1} = Pstride_d*dims[d])
+        Base.Cartesian.@nexprs $N d->(offset_d = 1)  # offset_0 is a linear index into parent
+        k = 0
+        index = Array(Int, n)
+        Base.Cartesian.@nloops $N i d->(1:dimsize(V, d+dimoffset, I_d)) d->(offset_{d-1} = offset_d + (I_d[i_d]-1)*Pstride_d) begin
+            index[k+=1] = offset_0
+        end
+        index
+    end
+end
 merge_indexes(V, indexes::NTuple, dims::Dims, linindex) = merge_indexes_div(V, indexes, dims, linindex)
 
 # This could be written as a regular function, but performance
