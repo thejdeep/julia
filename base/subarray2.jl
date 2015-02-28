@@ -83,7 +83,7 @@ end
 # is just a matter of deleting the explicit call to copy.
 getindex{T,N,P,IV}(V::SubArray{T,N,P,IV}, I::ViewIndex...) = copy(sub(V, I...))
 getindex{T,N,P,IV}(V::SubArray{T,N,P,IV}, I::AbstractArray{Bool,N}) = copy(sub(V, find(I)))   # this could be much better optimized
-getindex{T,N,P,IV}(V::SubArray{T,N,P,IV}, I::Union(Real, AbstractVector)...) = getindex(V, to_index(I)...)
+getindex{T,N,P,IV}(V::SubArray{T,N,P,IV}, I::Union(Real, AbstractVector, Colon)...) = getindex(V, to_index(I)...)
 
 function setindex!{T,P,IV}(V::SubArray{T,1,P,IV}, v, I::AbstractArray{Bool,1})
     length(I) == length(V) || throw(DimensionMismatch("logical vector must match array length"))
