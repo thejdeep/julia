@@ -835,7 +835,7 @@ A = [NaN]; B = [NaN]
 # complete testsuite for reducedim
 
 # Inferred types
-Nmax = 3 # TODO: go up to CARTESIAN_DIMS+2 (currently this exposes problems)
+Nmax = 2 # TODO: go up to CARTESIAN_DIMS+2 (currently this exposes problems)
 for N = 1:Nmax
     #indexing with (UnitRange, UnitRange, UnitRange)
     args = ntuple(N, d->UnitRange{Int})
